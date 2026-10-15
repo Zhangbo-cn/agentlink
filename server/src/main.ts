@@ -3,6 +3,7 @@ import { startServer } from "./server.ts";
 import { loadConfig } from "./config.ts";
 import { Logger } from "./util.ts";
 import fs from "node:fs";
+import { parseEnv } from "node:util";
 import { createMailer, explainSmtpError, loginEmail, resolveSmtp, smtpSettingsFromConfig, smtpConfigWarnings, SMTP_PRESETS } from "./mailer.ts";
 
 // Load settings from a .env file so they don't have to be exported (and mistyped) in every terminal.
@@ -10,8 +11,12 @@ import { createMailer, explainSmtpError, loginEmail, resolveSmtp, smtpSettingsFr
 for (const f of [process.env.AGENTLINK_ENV_FILE, ".env", "deploy/.env"].filter(Boolean) as string[]) {
   try {
     if (!fs.existsSync(f)) continue;
+    const fromFile = parseEnv(fs.readFileSync(f, "utf8"));
+    // Values already exported in this shell take precedence and are a common source of stale settings.
+    const shadowed = Object.keys(fromFile).filter((k) => process.env[k] !== undefined && process.env[k] !== fromFile[k]);
     process.loadEnvFile(f);
     console.log(`Loaded settings from ${f}`);
+    if (shadowed.length) console.log(`⚠ ${shadowed.join(", ")} 已在当前终端 export，其值优先于 ${f}；要用文件里的值请先 unset ${shadowed.join(" ")}`);
     break;
   } catch (e) {
     console.error(`Ignoring ${f}: ${(e as Error).message}`);
@@ -66,11 +71,14 @@ if (cmd === "set-pass") {
   if (provider || user) console.log(`Updating ${file}`);
   let pass = flag("pass");
   if (pass === undefined) {
-    const rl = (await import("node:readline/promises")).createInterface({ input: process.stdin, output: process.stdout, terminal: process.stdin.isTTY });
-    if (process.stdin.isTTY) (rl as any)._writeToOutput = () => {}; // never echo the code
-    pass = (await rl.question("授权码/App Password（输入时不显示）: ")).trim();
-    rl.close();
-    process.stdout.write("\n");
+    // Read keys with readline's output pointed at a sink: in raw mode readline is the one echoing,
+    // so a sink means the typed authorization code never appears on screen.
+    const { createInterface } = await import("node:readline/promises");
+    const { Writable } = await import("node:stream");
+    const sink = new Writable({ write(_c, _e, cb) { cb(); } });
+    const rl = createInterface({ input: process.stdin, output: sink as unknown as NodeJS.WritableStream, terminal: process.stdin.isTTY });
+    process.stdout.write("授权码/App Password（输入时不显示）: ");
+    try { pass = (await rl.question("")).trim(); } finally { rl.close(); process.stdout.write("\n"); }
   }
   if (pass) {
     const bad = [...pass].filter((c) => /[\s'"“”]/.test(c)).length;
@@ -78,7 +86,10 @@ if (cmd === "set-pass") {
     put("AGENTLINK_SMTP_PASS", pass);
   }
   fs.writeFileSync(file, text);
-  console.log(`✓ 已写入 ${file}（密码长度 ${pass?.length ?? 0}）。下一步：node bin/agentlink-server.mjs test-mail 你的另一个邮箱`);
+  const shadow = process.env.AGENTLINK_SMTP_PASS !== undefined && process.env.AGENTLINK_SMTP_PASS !== pass;
+  console.log(`✓ 已写入 ${file}（密码长度 ${pass?.length ?? 0}）`);
+  if (shadow) console.log(`⚠ 当前终端里还 export 着旧的 AGENTLINK_SMTP_PASS（长度 ${process.env.AGENTLINK_SMTP_PASS!.length}），它的优先级高于 ${file}。\n  请先执行：unset AGENTLINK_SMTP_PASS`);
+  console.log(`下一步：node bin/agentlink-server.mjs test-mail 你的另一个邮箱`);
   process.exit(0);
 }
 
