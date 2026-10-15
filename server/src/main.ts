@@ -2,7 +2,21 @@
 import { startServer } from "./server.ts";
 import { loadConfig } from "./config.ts";
 import { Logger } from "./util.ts";
-import { createMailer, explainSmtpError, loginEmail, resolveSmtp, smtpSettingsFromConfig, SMTP_PRESETS } from "./mailer.ts";
+import fs from "node:fs";
+import { createMailer, explainSmtpError, loginEmail, resolveSmtp, smtpSettingsFromConfig, smtpConfigWarnings, SMTP_PRESETS } from "./mailer.ts";
+
+// Load settings from a .env file so they don't have to be exported (and mistyped) in every terminal.
+// Real environment variables win; AGENTLINK_ENV_FILE overrides the search path.
+for (const f of [process.env.AGENTLINK_ENV_FILE, ".env", "deploy/.env"].filter(Boolean) as string[]) {
+  try {
+    if (!fs.existsSync(f)) continue;
+    process.loadEnvFile(f);
+    console.log(`Loaded settings from ${f}`);
+    break;
+  } catch (e) {
+    console.error(`Ignoring ${f}: ${(e as Error).message}`);
+  }
+}
 
 const [cmd, arg] = process.argv.slice(2);
 
@@ -13,6 +27,7 @@ if (cmd === "test-mail") {
   if (!r) { console.error("No SMTP configured. Set AGENTLINK_SMTP_URL or AGENTLINK_SMTP_PROVIDER + AGENTLINK_SMTP_USER + AGENTLINK_SMTP_PASS."); process.exit(1); }
   if (!arg) { console.error("Usage: agentlink-server test-mail <recipient>"); process.exit(1); }
   console.log(`SMTP: ${r.label}  From: ${r.from}`);
+  for (const w of smtpConfigWarnings(cfg)) console.error(`⚠ ${w}`);
   const mailer = createMailer(cfg, new Logger("silent"));
   try {
     await mailer.verify?.();

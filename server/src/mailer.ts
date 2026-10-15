@@ -82,8 +82,32 @@ export function smtpSettingsFromConfig(cfg: Config): SmtpSettings {
 export function createMailer(cfg: Config, log: Logger): Mailer {
   const r = resolveSmtp(smtpSettingsFromConfig(cfg));
   if (!r) return new LogMailer(log);
+  for (const w of smtpConfigWarnings(cfg)) log.warn("mail.smtp_config", { problem: w });
   log.info("mail.smtp", { via: r.label, from: r.from });
   return new SmtpMailer(r.transport, r.from);
+}
+
+/**
+ * Catches the mistakes that actually happen when people paste an authorization code:
+ * a stray prompt string, quotes kept by the shell, or the login password instead of the code.
+ * Returns human-readable problems (empty = looks fine).
+ */
+export function smtpConfigWarnings(cfg: Config): string[] {
+  const s = cfg.smtp;
+  if (!cfg.smtpUrl && !s.provider && !s.host) return [];
+  const out: string[] = [];
+  const pass = s.pass ?? "";
+  const p = s.provider?.toLowerCase();
+  if (!pass) out.push("AGENTLINK_SMTP_PASS 是空的（或没传进这个终端）：授权码没有设置成功");
+  else if (/[\s'"“”]/.test(pass)) out.push("AGENTLINK_SMTP_PASS 里含空格、换行或引号：粘贴时很可能把提示文字或半条命令一起带进去了，请重新设置");
+  else if (/授权码|你的|password|passwd/i.test(pass)) out.push("AGENTLINK_SMTP_PASS 看起来还是占位符/登录密码，请填入邮箱生成的授权码");
+  else if (!/^[\x21-\x7e]+$/.test(pass)) out.push("AGENTLINK_SMTP_PASS 含非 ASCII 字符，授权码应为英文字母和数字");
+  else if ((p === "163" || p === "126" || p === "yeah") && !/^[A-Z0-9]{16}$/.test(pass)) out.push(pass.length === 16
+    ? "网易授权码是 16 位大写字母，当前含小写字母或数字，不像是授权码（可能是登录密码），请到 设置 → POP3/SMTP/IMAP → 授权密码管理 重新生成"
+    : `网易授权码通常是 16 位大写字母，当前是 ${pass.length} 位，请到 设置 → POP3/SMTP/IMAP → 授权密码管理 重新生成`);
+  if (s.user && !/^[^@\s]+@[^@\s]+$/.test(s.user)) out.push("AGENTLINK_SMTP_USER 应为完整邮箱地址");
+  if (cfg.mailFrom && s.user && !cfg.mailFrom.includes(s.user)) out.push("AGENTLINK_MAIL_FROM 与 SMTP 登录账号不一致，QQ/163/Gmail 会拒发；留空即可自动使用登录账号");
+  return out;
 }
 
 /** Map raw SMTP errors to actionable hints (logged for the operator, never shown to end users). */

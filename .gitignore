@@ -4,3 +4,4 @@ data
 *.db-wal
 *.db-shm
 deploy/.env
+/.env

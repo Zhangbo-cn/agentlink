@@ -113,6 +113,9 @@ All settings are environment variables. See [deploy/.env.example](deploy/.env.ex
 Users can sign up with **any** email address: QQ, Gmail, 163, 126, Outlook, a company domain, and so on. The server only needs **one mailbox to send from**:
 
 ```bash
+cp deploy/.env.example .env      # then edit .env — the server loads it automatically (real env vars win)
+# .env is gitignored, so the authorization code never ends up in a commit
+
 # QQ mailbox: Settings → Account → enable POP3/SMTP → generate an authorization code (授权码)
 AGENTLINK_SMTP_PROVIDER=qq AGENTLINK_SMTP_USER=yourbot@qq.com AGENTLINK_SMTP_PASS=<授权码>
 # NetEase 163/126: Settings → POP3/SMTP/IMAP → enable SMTP → authorization code

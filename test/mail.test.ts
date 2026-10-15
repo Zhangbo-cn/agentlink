@@ -6,7 +6,7 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { SMTPServer } from "smtp-server";
 import { simpleParser } from "mailparser";
-import { resolveSmtp, explainSmtpError, SMTP_PRESETS } from "../server/src/mailer.ts";
+import { resolveSmtp, explainSmtpError, smtpConfigWarnings, SMTP_PRESETS } from "../server/src/mailer.ts";
 import { startServer } from "../server/src/server.ts";
 import { startEmailLogin, verifyEmailLogin, AgentLinkError } from "../sdk/client.ts";
 
@@ -79,3 +79,18 @@ test("end-to-end: real SMTP over implicit TLS with AUTH; codes reach qq/gmail/16
   await new Promise<void>((r) => smtp.close(() => r()));
   fs.rmSync(dir, { recursive: true, force: true }); fs.rmSync(dir + "-2", { recursive: true, force: true });
 });
+
+test("config warnings catch the real paste mistakes", () => {
+  const w = (smtp: any, extra: any = {}) => smtpConfigWarnings({ ...baseCfg(), smtp, ...extra });
+  assert.match(w({ provider: "163", user: "a@163.com", pass: "" })[0], /是空的/);
+  // `read -s -p "授权码: XXXXX" VAR` swallows the prompt text into the variable
+  assert.match(w({ provider: "163", user: "a@163.com", pass: "授权码: KWiag\nbZKn4AULXRN" })[0], /含空格、换行或引号/);
+  assert.match(w({ provider: "qq", user: "a@qq.com", pass: "你的授权码" })[0], /占位符|登录密码|授权码/);
+  assert.match(w({ provider: "163", user: "a@163.com", pass: "short" })[0], /16 位/);
+  assert.match(w({ provider: "qq", user: "not-an-email", pass: "ABCDEFGHIJKLMNOP" })[0], /完整邮箱地址/);
+  assert.match(w({ provider: "qq", user: "a@qq.com", pass: "ABCDEFGHIJKLMNOP" }, { mailFrom: "x <no-reply@localhost>" })[0], /MAIL_FROM/);
+  assert.equal(w({ provider: "qq", user: "a@qq.com", pass: "ABCDEFGHIJKLMNOP" }).length, 0);
+  assert.equal(w({ provider: "gmail", user: "a@gmail.com", pass: "abcd efgh ijkl mnop" }).length, 1); // spaces -> only that warning
+  assert.equal(smtpConfigWarnings(baseCfg()).length, 0); // no SMTP at all is not a problem
+});
+const baseCfg = () => ({ smtpUrl: "", smtp: {}, mailFrom: "" }) as any;
