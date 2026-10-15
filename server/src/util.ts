@@ -100,3 +100,33 @@ export class Metrics {
     return lines.join("\n") + "\n";
   }
 }
+
+/**
+ * Set KEY=value in a dotenv-style file body, keeping exactly one line for the key.
+ * Duplicates matter: a .env with two AGENTLINK_SMTP_PASS lines silently uses the last one,
+ * so a leftover block from an earlier attempt can override what was just written.
+ */
+export function setEnvValue(text: string, key: string, value: string): string {
+  const re = new RegExp(`^\\s*${key}\\s*=`);
+  const lines = text.split(/\r?\n/);
+  const at = lines.findIndex((l) => re.test(l));
+  const kept = lines.filter((l) => !re.test(l));
+  const tail = kept.length && kept[kept.length - 1] === "" ? kept.pop()! : undefined;
+  if (at >= 0) kept.splice(Math.min(at, kept.length), 0, `${key}=${value}`);
+  else kept.push(`${key}=${value}`);
+  if (tail !== undefined) kept.push(tail);
+  return kept.join("\n");
+}
+
+/** Keys that appear more than once in a dotenv-style file, as "KEY (line a, line b)". */
+export function duplicateEnvKeys(text: string): string[] {
+  const first = new Map<string, number>();
+  const out: string[] = [];
+  text.split(/\r?\n/).forEach((l, i) => {
+    const m = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=/.exec(l);
+    if (!m) return;
+    if (first.has(m[1])) out.push(`${m[1]}（第 ${first.get(m[1])! + 1} 行和第 ${i + 1} 行）`);
+    else first.set(m[1], i);
+  });
+  return out;
+}

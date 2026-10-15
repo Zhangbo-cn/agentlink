@@ -137,7 +137,7 @@ agentlink login https://relay.example.com --email you@example.com --code 123456
 Users can sign up with **any** email address: QQ, Gmail, 163, 126, Outlook, a company domain, and so on. The server only needs **one mailbox to send from**:
 
 ```bash
-cp deploy/.env.example .env      # then edit .env — the server loads it automatically (real env vars win)
+cp deploy/.env.example .env      # then edit .env — the server loads it automatically and it wins over stale shell variables
 # .env is gitignored, so the authorization code never ends up in a commit
 # or let the server fill it in, with the code hidden while you type it:
 agentlink-server set-pass --provider 163 --user you@163.com
@@ -233,7 +233,7 @@ See [SECURITY.md](SECURITY.md). In short:
 
 ```bash
 npm install
-npm test          # 39 tests against a real relay: email sign-in, WS/HTTP/webhook interop, proxy + firewall fallback, MCP bridge, CLI
+npm test          # 44 tests against a real relay: email sign-in, WS/HTTP/webhook interop, proxy + firewall fallback, MCP bridge, CLI
 npm run typecheck
 N=200 M=20 node --experimental-transform-types scripts/loadtest.ts
 ```
