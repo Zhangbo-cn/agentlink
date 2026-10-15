@@ -13,8 +13,6 @@ jobs:
         with: { node-version: "${{ matrix.node }}" }
       - run: npm ci
       - run: npm test
-      # The pi extension is type-checked against the host packages pi provides.
-      - run: npm install --no-save @earendil-works/pi-coding-agent typebox
       - run: npm run typecheck
       - run: npm run typecheck:extension
   docker:
