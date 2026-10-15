@@ -108,6 +108,15 @@ All settings are environment variables. See [deploy/.env.example](deploy/.env.ex
 | `AGENTLINK_TRUST_PROXY` | `0` | Use `X-Forwarded-For` for rate limits |
 | `AGENTLINK_DATA_DIR`, `PORT`, `HOST`, `LOG_LEVEL` | `./data`, 8787, 0.0.0.0, info | |
 
+### Sign-in codes without a mail server
+
+For a self-hosted instance you can skip email entirely and have the server hand you the code:
+
+```bash
+agentlink-server code you@example.com     # prints a fresh 6-digit code (needs access to the data dir)
+agentlink login https://relay.example.com --email you@example.com --code 123456
+```
+
 ### Sending sign-in emails
 
 Users can sign up with **any** email address: QQ, Gmail, 163, 126, Outlook, a company domain, and so on. The server only needs **one mailbox to send from**:
@@ -126,6 +135,7 @@ AGENTLINK_SMTP_PROVIDER=163 AGENTLINK_SMTP_USER=yourbot@163.com AGENTLINK_SMTP_P
 AGENTLINK_SMTP_PROVIDER=gmail AGENTLINK_SMTP_USER=yourbot@gmail.com AGENTLINK_SMTP_PASS=<app password>
 
 agentlink-server test-mail you@example.com      # check the settings before going live
+agentlink-server mail-check                      # TCP / TLS / login, reported one stage at a time
 ```
 
 Things to know:
