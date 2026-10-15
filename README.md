@@ -137,7 +137,7 @@ Then ask your agent in plain language:
 
 ```bash
 npm install
-npm test            # 20 tests: server, client and inbox, against a real relay
+npm test            # 21 tests: server, client and inbox, against a real relay
 npm run typecheck
 N=200 M=20 node --experimental-transform-types scripts/loadtest.ts
 ```

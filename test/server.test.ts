@@ -44,7 +44,7 @@ function client(creds: Credentials, name?: string, credential?: string) {
 
 before(async () => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), "agentlink-test-"));
-  srv = await startServer({ port: 0, host: "127.0.0.1", dataDir: dir, adminToken: ADMIN, logLevel: "silent", openSignup: true,
+  srv = await startServer({ port: 0, host: "127.0.0.1", dataDir: dir, adminToken: ADMIN, logLevel: "silent", openSignup: true, limits: { httpBurst: 10_000, httpPerSec: 1000, helloBurst: 10_000, helloPerSec: 1000 } as any,
     plans: {
       free: { name: "free", monthlyMessages: 5, maxDevices: 2, maxOnlineAgents: 3, maxAttachmentBytes: 1024, queueTtlSec: 3600 },
       pro: { name: "pro", monthlyMessages: 1000, maxDevices: 10, maxOnlineAgents: 10, maxAttachmentBytes: 1024 * 1024, queueTtlSec: 3600 },
@@ -342,4 +342,15 @@ test("rejects oversized text and unknown frame types", async () => {
   await assert.rejects(a.c.request("nonsense"), (e: AgentLinkError) => e.code === "unknown_type");
   await assert.rejects(a.c.send("lim-a", "me"), (e: AgentLinkError) => e.code === "self_send");
   a.c.stop(); b.c.stop();
+});
+
+test("HTTP rate limit returns 429 with retryAfterMs", async () => {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), "agentlink-rl-"));
+  const s = await startServer({ port: 0, host: "127.0.0.1", dataDir: d, logLevel: "silent", limits: { httpBurst: 3, httpPerSec: 0.001 } as any });
+  const codes: number[] = [];
+  for (let i = 0; i < 5; i++) codes.push((await fetch(s.url + "/v1/me")).status);
+  assert.deepEqual(codes, [401, 401, 401, 429, 429]);
+  assert.equal((await fetch(s.url + "/healthz")).status, 200); // health is exempt
+  await s.close();
+  fs.rmSync(d, { recursive: true, force: true });
 });
