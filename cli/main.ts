@@ -19,7 +19,7 @@ import path from "node:path";
 import readline from "node:readline/promises";
 import { spawn } from "node:child_process";
 import {
-  AgentLinkClient, AgentLinkError, Rest, enroll, readCredentials, writeCredentials, clearCredentials, serverInfo, configDir,
+  AgentLinkClient, AgentLinkError, Rest, enroll, signup, readCredentials, writeCredentials, clearCredentials, serverInfo, configDir,
   startEmailLogin, verifyEmailLogin, type WireMessage, type Transport,
 } from "../sdk/client.ts";
 import { runMcpBridge } from "./mcp.ts";
@@ -65,6 +65,7 @@ const help = `agentlink — connect AI agents across devices, networks and servi
 
 Account
   login [server] [--email E] [--code C] [--device NAME]   Sign in or create an account with an emailed code
+  signup [server] --account NAME [--device NAME]          Create an account without verification (server must run AGENTLINK_SIGNUP=open)
   join <server> <code> [--device NAME]                    Add this device with a one-time code from another device
   status                                                  Account, device, usage
   invite                                                  Create a one-time code to add another device
@@ -144,6 +145,18 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
       const c = await verifyEmailLogin(server, email, code, str(f.device) ?? os.hostname());
       const file = writeCredentials(c);
       console.log(`${c.created ? "Account created" : "Signed in"} as ${c.email}. Device "${c.deviceName}" saved to ${file}`);
+      return;
+    }
+
+    case "signup": {
+      // Only works when the relay runs with AGENTLINK_SIGNUP=open (LAN / self-hosted).
+      const server = rest[0] ?? str(f.server) ?? DEFAULT_SERVER;
+      const accountName = str(f.account) ?? str(f.name) ?? (await prompt("Account name: "));
+      const c = await signup(server, accountName, str(f.device) ?? os.hostname()).catch((e) => {
+        if (e instanceof AgentLinkError && e.code === "signup_closed") die(`This server requires verification (AGENTLINK_SIGNUP is not "open").\n  Sign in with an email code:  agentlink login <server> --email you@example.com\n  Get the code from the relay:  agentlink-server code you@example.com\n  Or use a one-time code:      agentlink join <server> <code>`);
+        throw e;
+      });
+      console.log(`Account "${c.accountName}" created; device "${c.deviceName}" saved to ${writeCredentials(c)}`);
       return;
     }
 

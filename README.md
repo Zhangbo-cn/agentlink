@@ -108,6 +108,21 @@ All settings are environment variables. See [deploy/.env.example](deploy/.env.ex
 | `AGENTLINK_TRUST_PROXY` | `0` | Use `X-Forwarded-For` for rate limits |
 | `AGENTLINK_DATA_DIR`, `PORT`, `HOST`, `LOG_LEVEL` | `./data`, 8787, 0.0.0.0, info | |
 
+### Running without email at all
+
+Email is only used to verify identity at sign-up / new-device sign-in. Message delivery never touches it.
+If the relay runs on your own machine or LAN, drop email entirely:
+
+```bash
+AGENTLINK_SIGNUP=open agentlink-server            # accounts can be created without verification
+agentlink signup http://localhost:8787 --account zhang --device mypc
+```
+
+`AGENTLINK_SIGNUP=open` means anyone who can reach the port can create an account, so keep it on a
+trusted network (or behind the reverse proxy) — use `email` or `invite` for anything public.
+The other no-SMTP options are `agentlink-server code <email>` (below) and invite codes via
+`agentlink invite` / `agentlink join`.
+
 ### Sign-in codes without a mail server
 
 For a self-hosted instance you can skip email entirely and have the server hand you the code:
