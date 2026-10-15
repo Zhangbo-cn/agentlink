@@ -461,3 +461,28 @@ test("CLI cross-account pairing: pair-code while the agent is online elsewhere, 
     fs.rmSync(cfgA, { recursive: true, force: true }); fs.rmSync(cfgB, { recursive: true, force: true });
   }
 });
+
+// ------------------------------------------------------------------ agent lifecycle
+
+test("deleting an agent frees its name and stops it resolving for peers", async () => {
+  const creds = await login("lifecycle@example.com", "laptop");
+  const bot = live(creds, "old-bot", "ws");
+  bot.c.start(); await bot.c.ready();
+  const before = await bot.c.status("old-bot");
+
+  // A second device tries the same name: names are account-wide, so it is refused.
+  await assert.rejects(
+    new Rest(creds).post("/v1/agent/connect", { name: "old-bot" }),
+    (e: AgentLinkError) => e.code === "name_in_use",
+  );
+
+  await new Rest(creds).del("/v1/agents/old-bot");
+  await assert.rejects(new Rest(creds).del("/v1/agents/old-bot"), (e: AgentLinkError) => e.code === "not_found");
+
+  // The name is free again, and peers no longer see the old registration.
+  const revived = await new Rest(creds).post("/v1/agent/connect", { name: "old-bot" });
+  assert.equal(revived.name, "old-bot");
+  assert.notEqual(revived.agentId, before.agentId); // a fresh registration, not the deleted one
+  await assert.rejects(new Rest(creds).post("/v1/agent/connect", { name: "old-bot" }), (e: AgentLinkError) => e.code === "name_in_use");
+  bot.c.stop();
+});

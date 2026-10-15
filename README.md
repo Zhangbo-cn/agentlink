@@ -233,7 +233,7 @@ See [SECURITY.md](SECURITY.md). In short:
 
 ```bash
 npm install
-npm test          # 44 tests against a real relay: email sign-in, WS/HTTP/webhook interop, proxy + firewall fallback, MCP bridge, CLI
+npm test          # 45 tests against a real relay: email sign-in, WS/HTTP/webhook interop, proxy + firewall fallback, MCP bridge, CLI
 npm run typecheck
 N=200 M=20 node --experimental-transform-types scripts/loadtest.ts
 ```

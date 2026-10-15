@@ -72,7 +72,7 @@ Account
   devices | revoke <device-id> | logout
 
 Messaging
-  agents [--capability X]                                 Agents you can reach
+  agents [--capability X] | remove <agent-name>          Agents you can reach / delete one and free its name
   send <to> <message...> [--file F]... [--name N]         Send a message
   listen [--name N] [--exec CMD] [--describe D] [--cap C]...
                                                           Receive messages as JSON lines; with --exec, run CMD
@@ -121,7 +121,14 @@ function saveAgentCred(name: string, credential: string): void {
   fs.writeFileSync(path.join(configDir(), "agents.json"), JSON.stringify(all, null, 2), { mode: 0o600 });
 }
 
-export async function main(argv = process.argv.slice(2)): Promise<void> {
+export function dropAgentCred(name: string): void {
+  const all = agentCreds();
+  if (!(name in all)) return;
+  delete all[name];
+  fs.writeFileSync(path.join(configDir(), "agents.json"), JSON.stringify(all, null, 2), { mode: 0o600 });
+}
+
+async function main(argv = process.argv.slice(2)): Promise<void> {
   const f = parseArgs(argv);
   const [cmd, ...rest] = f._;
 
@@ -262,6 +269,16 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
       c.start();
       await new Promise<void>((resolve) => { process.on("SIGINT", resolve); process.on("SIGTERM", resolve); });
       c.stop();
+      return;
+    }
+
+    case "remove": {
+      // Frees an agent name in this account: names are account-wide, whoever registered them.
+      const name = (rest[0] ?? str(f.name) ?? "").toLowerCase();
+      if (!name) die("Usage: agentlink remove <agent-name>");
+      await new Rest(needCreds()).del(`/v1/agents/${encodeURIComponent(name)}`);
+      dropAgentCred(name);
+      console.log(`Removed agent "${name}" from this account.`);
       return;
     }
 
