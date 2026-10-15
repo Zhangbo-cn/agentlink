@@ -433,7 +433,15 @@ export async function startServer(overrides: Partial<Config> & { mailer?: Mailer
     } catch (e) { log.error("sweep", { err: String(e) }); }
   }, 60_000);
 
-  await new Promise<void>((resolve) => server.listen(cfg.port, cfg.host, resolve));
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(cfg.port, cfg.host, () => { server.off("error", reject); resolve(); });
+  }).catch((e: NodeJS.ErrnoException) => {
+    if (e.code === "EADDRINUSE") {
+      throw new Error(`端口 ${cfg.port} 已被占用：可能已经有一个服务端在运行。\n  查看：pgrep -af "server/src/main.ts"\n  停掉：pkill -f "server/src/main.ts"\n  或者换个端口：PORT=8788 npm run server`);
+    }
+    throw e;
+  });
   const port = (server.address() as { port: number }).port;
   log.info("server.listening", { port, version: VERSION, dataDir: cfg.dataDir, signup: cfg.signup, mail: mailer.kind, webhooks: cfg.webhooks });
   if (mailer.verify) {
