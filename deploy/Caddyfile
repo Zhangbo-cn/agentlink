@@ -1,0 +1,7 @@
+# Automatic HTTPS; WebSocket upgrades are proxied transparently.
+{$AGENTLINK_DOMAIN} {
+	encode gzip
+	@metrics path /metrics
+	respond @metrics 404
+	reverse_proxy agentlink:8787
+}

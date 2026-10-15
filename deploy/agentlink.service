@@ -1,0 +1,23 @@
+# systemd unit for running without Docker. Put the repo at /opt/agentlink, then:
+#   sudo useradd -r -s /usr/sbin/nologin agentlink && sudo systemctl enable --now agentlink
+[Unit]
+Description=AgentLink relay
+After=network-online.target
+
+[Service]
+User=agentlink
+WorkingDirectory=/opt/agentlink
+EnvironmentFile=/etc/agentlink.env
+Environment=AGENTLINK_DATA_DIR=/var/lib/agentlink
+StateDirectory=agentlink
+ExecStart=/usr/bin/node --experimental-transform-types --no-warnings server/src/main.ts
+Restart=always
+RestartSec=2
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/agentlink
+
+[Install]
+WantedBy=multi-user.target

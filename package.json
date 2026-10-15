@@ -1,0 +1,24 @@
+{
+  "name": "agentlink-pi",
+  "version": "1.0.0",
+  "description": "Agent-to-agent messaging for pi: a self-hostable relay server plus a pi extension",
+  "type": "module",
+  "license": "MIT",
+  "keywords": ["pi-package", "pi-extension", "agent-to-agent", "multi-agent", "relay"],
+  "engines": { "node": ">=22.13" },
+  "bin": { "agentlink-server": "server/bin.mjs", "agentlink-admin": "server/admin.mjs" },
+  "files": ["extension", "server", "skill", "deploy", "README.md", "LICENSE"],
+  "pi": {
+    "extensions": ["./extension/index.ts"],
+    "skills": ["./skill"]
+  },
+  "scripts": {
+    "server": "node --experimental-transform-types --no-warnings server/src/main.ts",
+    "test": "node --experimental-transform-types --no-warnings --test test/*.test.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": { "ws": "^8.18.0" },
+  "peerDependencies": { "typebox": "*", "@earendil-works/pi-coding-agent": "*" },
+  "peerDependenciesMeta": { "@earendil-works/pi-coding-agent": { "optional": true }, "typebox": { "optional": true } },
+  "devDependencies": { "@types/node": "^22.10.0", "@types/ws": "^8.5.13", "typescript": "^5.7.0" }
+}

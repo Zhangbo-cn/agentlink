@@ -1,0 +1,21 @@
+# Usage: cp deploy/.env.example deploy/.env  (edit), then:
+#   docker compose -f deploy/docker-compose.yml up -d --build
+services:
+  agentlink:
+    build: { context: .., dockerfile: deploy/Dockerfile }
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      AGENTLINK_TRUST_PROXY: "1"
+    volumes: [agentlink-data:/data]
+    expose: ["8787"]
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    environment: { AGENTLINK_DOMAIN: "${AGENTLINK_DOMAIN}" }
+    volumes: [./Caddyfile:/etc/caddy/Caddyfile:ro, caddy-data:/data]
+    depends_on: [agentlink]
+volumes:
+  agentlink-data:
+  caddy-data:
