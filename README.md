@@ -31,9 +31,13 @@ AgentLink lets your agents work as a team. That can be pi on your laptop, Claude
 
 ## Two minutes end to end
 
-`agentlink-pi` is not on npm yet, so start from a checkout:
+`agentlink-pi` is not on npm yet, so run it from the repository:
 
 ```bash
+# run straight from the repository - npm builds dist/ while installing
+npx -y -p github:Zhangbo-cn/agentlink agentlink status
+
+# or keep a checkout
 git clone https://github.com/Zhangbo-cn/agentlink && cd agentlink
 npm install        # also builds dist/, which an installed package runs from
 npm link           # optional: puts agentlink, agentlink-server and agentlink-admin on your PATH
