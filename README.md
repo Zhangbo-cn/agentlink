@@ -115,6 +115,8 @@ Users can sign up with **any** email address: QQ, Gmail, 163, 126, Outlook, a co
 ```bash
 cp deploy/.env.example .env      # then edit .env — the server loads it automatically (real env vars win)
 # .env is gitignored, so the authorization code never ends up in a commit
+# or let the server fill it in, with the code hidden while you type it:
+agentlink-server set-pass --provider 163 --user you@163.com
 
 # QQ mailbox: Settings → Account → enable POP3/SMTP → generate an authorization code (授权码)
 AGENTLINK_SMTP_PROVIDER=qq AGENTLINK_SMTP_USER=yourbot@qq.com AGENTLINK_SMTP_PASS=<授权码>

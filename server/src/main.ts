@@ -47,6 +47,41 @@ if (cmd === "smtp-presets") {
   process.exit(0);
 }
 
+if (cmd === "set-pass") {
+  // agentlink-server set-pass [--provider 163] [--user me@163.com] [--pass CODE]
+  // Writes into .env with the prompt hidden, so the authorization code never touches shell history.
+  const flag = (n: string) => { const i = process.argv.indexOf(`--${n}`); return i > 0 ? process.argv[i + 1] : undefined; };
+  const file = process.env.AGENTLINK_ENV_FILE ?? (fs.existsSync(".env") ? ".env" : "deploy/.env");
+  let text = "";
+  try { text = fs.readFileSync(file, "utf8"); } catch { text = fs.readFileSync("deploy/.env.example", "utf8"); }
+  const put = (key: string, value: string) => {
+    const line = `${key}=${value}`;
+    const re = new RegExp(`^${key}=.*$`, "m");
+    text = re.test(text) ? text.replace(re, line) : text.trimEnd() + "\n" + line + "\n";
+  };
+  const provider = flag("provider") ?? process.env.AGENTLINK_SMTP_PROVIDER;
+  const user = flag("user") ?? process.env.AGENTLINK_SMTP_USER;
+  if (provider) put("AGENTLINK_SMTP_PROVIDER", provider);
+  if (user) put("AGENTLINK_SMTP_USER", user);
+  if (provider || user) console.log(`Updating ${file}`);
+  let pass = flag("pass");
+  if (pass === undefined) {
+    const rl = (await import("node:readline/promises")).createInterface({ input: process.stdin, output: process.stdout, terminal: process.stdin.isTTY });
+    if (process.stdin.isTTY) (rl as any)._writeToOutput = () => {}; // never echo the code
+    pass = (await rl.question("授权码/App Password（输入时不显示）: ")).trim();
+    rl.close();
+    process.stdout.write("\n");
+  }
+  if (pass) {
+    const bad = [...pass].filter((c) => /[\s'"“”]/.test(c)).length;
+    if (bad) { console.error(`✗ 输入里含 ${bad} 个空格/引号，授权码只由字母和数字组成，请重新运行。`); process.exit(1); }
+    put("AGENTLINK_SMTP_PASS", pass);
+  }
+  fs.writeFileSync(file, text);
+  console.log(`✓ 已写入 ${file}（密码长度 ${pass?.length ?? 0}）。下一步：node bin/agentlink-server.mjs test-mail 你的另一个邮箱`);
+  process.exit(0);
+}
+
 const server = await startServer();
 
 let stopping = false;

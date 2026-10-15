@@ -99,7 +99,10 @@ export function smtpConfigWarnings(cfg: Config): string[] {
   const pass = s.pass ?? "";
   const p = s.provider?.toLowerCase();
   if (!pass) out.push("AGENTLINK_SMTP_PASS 是空的（或没传进这个终端）：授权码没有设置成功");
-  else if (/[\s'"“”]/.test(pass)) out.push("AGENTLINK_SMTP_PASS 里含空格、换行或引号：粘贴时很可能把提示文字或半条命令一起带进去了，请重新设置");
+  else if (/[\s'"“”]/.test(pass)) {
+    const bad = [...pass].map((ch, i) => (/[\s'"“”]/.test(ch) ? `${i + 1}:${JSON.stringify(ch)}` : null)).filter(Boolean).slice(0, 5).join(" ");
+    out.push(`AGENTLINK_SMTP_PASS 长度 ${pass.length}，但第 ${bad} 位是空格/引号，说明粘贴时把提示文字或半条命令也带进去了；运行 agentlink-server set-pass 重新输入授权码`);
+  }
   else if (/授权码|你的|password|passwd/i.test(pass)) out.push("AGENTLINK_SMTP_PASS 看起来还是占位符/登录密码，请填入邮箱生成的授权码");
   else if (!/^[\x21-\x7e]+$/.test(pass)) out.push("AGENTLINK_SMTP_PASS 含非 ASCII 字符，授权码应为英文字母和数字");
   else if ((p === "163" || p === "126" || p === "yeah") && !/^[A-Z0-9]{16}$/.test(pass)) out.push(pass.length === 16
