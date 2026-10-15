@@ -1,168 +1,187 @@
 # AgentLink
 
-Agent-to-agent messaging for [pi](https://pi.dev). Each pi instance (your laptop, a work machine, a server, a teammate's box) becomes a named agent that can message, delegate to and get results back from the others. It works across networks because every agent only makes outbound connections.
+**Free, open-source messaging between AI agents across devices, networks and services.**
 
-It has two parts:
+AgentLink lets your agents work as a team. That can be pi on your laptop, Claude Code on your workstation, a pi session on a production server, a teammate's Codex, a Python script or a webhook service. Each agent stays where its context, files and permissions already are. Each one can find the others, delegate work to them and get results back.
 
-- **Relay server** (`server/`): a single self-hosted Node process with SQLite storage. It handles accounts, devices, agent identities, message routing, offline queues, attachments, quotas and an admin API.
-- **pi extension** (`extension/`): connects a pi session to the relay. It gives the model `agentlink_*` tools and gives you `/agentlink_*` commands.
+- **Across devices.** Sign in with the same email on every machine. All your agents then share one account and can reach each other by name.
+- **Across networks.** Agents only make outbound connections, so NAT, home routers and cloud VPCs need no configuration. WebSocket is the default. When a firewall or proxy blocks WebSockets, the client switches to HTTP long-polling on its own. It also respects `HTTPS_PROXY`.
+- **Across services and frameworks.**
+  - A native pi extension.
+  - An MCP bridge for Claude Code, Codex, Cursor, Gemini CLI, OpenCode, Windsurf and Claude Desktop.
+  - A CLI that turns any script into an agent.
+  - A plain HTTP API for any language.
+  - Signed webhooks for services that can't keep a connection open.
+
+  All of them use the same queue and the same delivery guarantees.
+- **Across accounts.** Two people can link specific agents with a single-use pairing code.
+- **Free.** MIT license, no paid tiers, no billing code. Run your own relay. The only limits are fair-use limits the operator sets, and all of them default to unlimited or generous values.
 
 ```
-pi (laptop) ──wss──┐                     ┌──wss── pi (server, "prod")
-                   ├── AgentLink relay ──┤
-pi (work)  ──wss───┘   SQLite + blobs    └──wss── pi (partner account, paired)
+ pi (laptop) ─────wss──┐                         ┌── wss ─── pi (prod server)
+ Claude Code (MCP) ────┤                         ├── http ── Python script (long-poll)
+ Codex (MCP) ──────────┼──── AgentLink relay ────┼── https ─ webhook service
+ corporate network ────┘   SQLite · one process  └── wss ─── teammate's agent (paired)
+   (http fallback)
 ```
 
-## Features
+## Quick start
 
-- **Delivery.** Messages are stored before the sender gets an answer. Recipients acknowledge after the message has been injected into their session. Unacknowledged messages are sent again on reconnect or after 30 s, and the client drops duplicates by message id. Messages arrive in order.
-- **Offline queue.** Persistent agents (started with `--agentlink-name`) get queued messages when they reconnect. Your plan sets how long the queue holds them (24 h on free, 7 days on pro).
-- **Idempotent sends.** Every send carries a key, so a retry after a network drop is never delivered or charged twice.
-- **steer and followUp.** A followUp waits until the recipient is idle. A steer interrupts the recipient. When a steer is delivered, everything queued before it is delivered together with it, so a correction never arrives ahead of the message it corrects.
-- **Presence.** Agents report busy, idle or offline, pushed from pi's `agent_start` and `agent_settled` events.
-- **Identity.** Each agent has a stable id and a name. A persistent name belongs to the device that created it. Ephemeral agents keep their identity across session switches and reconnects through a credential, and are cleaned up 10 minutes after they go offline.
-- **Accounts and devices.** Devices join an account with one-time codes (`XXXX-XXXX`, valid 15 min to 24 h). Only SHA-256 hashes of codes and tokens are stored. You can list and revoke devices; a revoked device is disconnected immediately.
-- **Cross-account pairing.** One side runs `/agentlink_pair_code`, the other runs `/agentlink_pair <code>`. Codes are single-use and expire after 10 minutes. Paired agents are addressed by id only, so other accounts cannot look up your agents by name. Either side can unpair.
-- **Attachments.** Up to 5 files per message, streamed to disk with a SHA-256 checksum checked on download. Only the sender's and recipient's accounts can download a file. Downloads never overwrite existing files.
-- **Plans and quotas.** Monthly message count, device count, online agent count, attachment size and queue duration per plan. You can define custom plans with `AGENTLINK_PLANS_JSON`.
-- **Operations.**
-  - Health and Prometheus `/metrics` endpoints, plus JSON logs.
-  - Rate limits on HTTP requests, connection attempts and sends.
-  - An audit log of account actions, kept 90 days.
-  - Graceful shutdown on SIGTERM and versioned schema migrations.
-  - Online backups and a Docker image with Caddy for automatic TLS.
-
-## Run the server
-
-Docker with automatic HTTPS:
+### 1. Run a relay (or use one someone else runs)
 
 ```bash
-cp deploy/.env.example deploy/.env   # set AGENTLINK_DOMAIN and AGENTLINK_ADMIN_TOKEN
+# Docker + automatic HTTPS
+cp deploy/.env.example deploy/.env      # set AGENTLINK_DOMAIN and AGENTLINK_SMTP_URL
 docker compose -f deploy/docker-compose.yml up -d --build
+
+# or plain Node (>= 22.13)
+npx agentlink-pi server                 # http://localhost:8787; sign-in codes go to the log without SMTP
 ```
 
-Plain Node (requires Node 22.13 or later):
+### 2. Sign in on each machine with your email
 
 ```bash
-npm ci --omit=dev
-AGENTLINK_ADMIN_TOKEN=$(openssl rand -hex 32) AGENTLINK_DATA_DIR=/var/lib/agentlink npm run server
+npx agentlink-pi login https://relay.example.com --email you@example.com
+# enter the 6-digit code from your inbox
 ```
 
-A systemd unit is in `deploy/agentlink.service`. If you run without Caddy, put the relay behind TLS yourself, because device tokens travel in the WebSocket handshake.
+The first sign-in creates your account. Every later sign-in with the same email adds that machine to the same account. If a machine has no email access, you can add it with a one-time code: run `agentlink invite` on a machine that is already signed in, then `agentlink join <server> <code>` on the new one.
 
-### Create accounts
+### 3. Connect your agents
 
+**pi** (native: incoming messages start a turn automatically)
 ```bash
-export AGENTLINK_URL=https://relay.example.com AGENTLINK_ADMIN_TOKEN=...
-npx agentlink-admin create "Acme" pro       # prints a one-time enrollment code
-npx agentlink-admin accounts
-npx agentlink-admin plan <account-id> free
-npx agentlink-admin disable <account-id>    # disconnects every agent on the account
+pi install npm:agentlink-pi
+pi --agentlink-name laptop --agentlink-describe "My laptop; owns the docs repo" --agentlink-caps repo:docs
 ```
+Inside pi you can also sign in with `/agentlink_login you@example.com https://relay.example.com`.
 
-To let users create their own accounts with `/agentlink_signup`, set `AGENTLINK_OPEN_SIGNUP=1`.
-
-### Configuration
-
-| Variable | Default | |
-|---|---|---|
-| `PORT` / `HOST` | `8787` / `0.0.0.0` | |
-| `AGENTLINK_DATA_DIR` | `./data` | SQLite database and attachment blobs |
-| `AGENTLINK_ADMIN_TOKEN` | – | Enables `/admin/*` |
-| `AGENTLINK_METRICS_TOKEN` | – | If set, `/metrics` requires a bearer token |
-| `AGENTLINK_OPEN_SIGNUP` | `0` | Self-service account creation |
-| `AGENTLINK_TRUST_PROXY` | `0` | Use `X-Forwarded-For` for rate limiting |
-| `AGENTLINK_PLANS_JSON` | – | Override or add plans |
-| `AGENTLINK_HTTP_BURST` / `_PER_SEC` | 60 / 2 | HTTP rate limit per IP |
-| `AGENTLINK_HELLO_BURST` / `_PER_SEC` | 60 / 1 | WebSocket connection attempts per IP |
-| `AGENTLINK_SEND_BURST` / `_PER_SEC` | 30 / 10 | Sends per agent |
-| `LOG_LEVEL` | `info` | |
-
-### Backups
-
+**Claude Code / Codex / Cursor / Gemini CLI / OpenCode** (MCP)
 ```bash
-deploy/backup.sh /var/lib/agentlink /backups   # consistent while the server is running
+claude mcp add agentlink -- npx -y agentlink-pi mcp --name workstation --framework claude-code
 ```
+See [examples/mcp-configs.md](examples/mcp-configs.md) for every client.
 
-## Use it in pi
-
+**Any script** (each message is passed to your command; whatever it prints is sent back as the reply)
 ```bash
-pi install npm:agentlink-pi     # or: pi install ./agentlink
+npx agentlink-pi listen --name ci-runner --cap ci,gpu --exec './run-job.sh'
 ```
 
-In pi:
+**Any language**: [examples/python_agent.py](examples/python_agent.py) uses only the standard library and HTTP long-polling.
+**Webhooks**: [examples/webhook-receiver.mjs](examples/webhook-receiver.mjs).
 
-```
-/agentlink_setup https://relay.example.com ABCD-EFGH
-```
+### 4. Ask
 
-The device credentials are written to `~/.config/agentlink/credentials.json` with mode 0600.
+> Find an agent that can deploy, ask it to roll out v1.4.2 to staging, and tell me when it's done.
 
-Give long-running agents a persistent name so they can receive queued messages:
+Your agent calls `agentlink_agents` with `capability: "deploy"` to find a suitable agent, then sends the task with `agentlink_send`. The reply comes back into your conversation.
 
-```bash
-pi --agentlink-name prod-server
-```
-
-Then ask your agent in plain language:
-
-> Ask prod-server to check the last 200 lines of the API log for 5xx errors and send me a summary.
-
-### Model tools
-
-`agentlink_agents`, `agentlink_send`, `agentlink_status`, `agentlink_download`. The bundled skill tells the model how to write messages that make sense on their own, and how to avoid polling and reply loops. It also tells the model to treat peer messages as requests, not as instructions from the user.
-
-### Commands
+## How it works
 
 | | |
 |---|---|
-| `/agentlink_setup <url> <code> [device]` | Enroll this device |
-| `/agentlink_signup <url> <account>` | Create an account (open-signup servers) |
-| `/agentlink_status` | Connection, identity, plan usage |
-| `/agentlink_agents` | Reachable agents |
-| `/agentlink_online` / `/agentlink_offline` | Connect / disconnect |
-| `/agentlink_invite_device` | One-time code for another device |
-| `/agentlink_devices`, `/agentlink_revoke_device <id>` | Manage devices |
-| `/agentlink_pair_code`, `/agentlink_pair <code>`, `/agentlink_unpair <id>` | Cross-account pairing |
-| `/agentlink_logout` | Delete local credentials |
+| **Identity** | Account (email) → devices (one per machine, revocable) → agents. An agent is a pi session, an MCP client, a script or a service. A persistent name belongs to the device that created it. Agents without a name are ephemeral, get a random name, and keep their identity across reconnects. |
+| **Discovery** | Agents publish a profile: framework, description, capability tags, project and host. `agentlink_agents` lists agents with their profile and live state: idle, busy or offline. It also shows how each one is connected (`ws`, `http` or `webhook`). |
+| **Delivery** | Messages are stored in SQLite before the sender gets a response. Delivery is at-least-once, and the client removes duplicates by message id. Order is preserved per recipient. If the recipient hasn't acknowledged within 60 s, the message is sent again. Sends with an idempotency key are never delivered or counted twice. Messages to offline persistent agents wait in a queue (7 days by default). |
+| **Priority** | A `followUp` waits until the recipient is idle. A `steer` interrupts the recipient. When a steer is delivered, everything queued before it is delivered with it, so a correction never arrives ahead of what it corrects. |
+| **Transports** | WebSocket (`/v1/ws`), HTTP long-poll (`/v1/agent/*`) and webhooks (signed with HMAC-SHA256 and retried with backoff up to 1 h) all use the same queue. |
+| **Files** | Up to 5 attachments per message, 25 MiB each by default. Uploads are streamed. Downloads are checked against a SHA-256 hash, can only be fetched by the sender's and recipient's accounts, and never overwrite existing files. |
 
-## Security model
+## Server configuration
 
-- Device tokens and process credentials are 192-bit random secrets, stored only as SHA-256 hashes on the server.
-- Account isolation is enforced on the server for every name lookup, send, presence query, attachment download and pairing.
-- The extension labels peer messages as coming from another agent, and the skill tells the model not to treat them as user instructions. This lowers the risk of prompt injection between agents but cannot remove it. Only connect agents you trust, and use pi's permission and confirmation extensions for destructive tools.
-- Messages and attachments are not end-to-end encrypted. The relay operator can read them. Queued and delivered messages are removed after their TTL or 24 h after delivery. Attachments expire with their message.
+All settings are environment variables. See [deploy/.env.example](deploy/.env.example).
+
+| Variable | Default | |
+|---|---|---|
+| `AGENTLINK_SIGNUP` | `email` | `email` (verified email), `invite` (admin-created accounts only), `open` (no verification, LAN only) |
+| `AGENTLINK_EMAIL_DOMAINS` | – | Limit sign-up to these domains, e.g. your company's |
+| `AGENTLINK_SMTP_URL` | – | `smtp://user:pass@host:587`. Without it, codes are written to the log |
+| `AGENTLINK_MAIL_FROM` | `AgentLink <no-reply@localhost>` | |
+| `AGENTLINK_WEBHOOKS` | `public` | `public` (https, public IPs only), `private` (allow LAN targets), `off` |
+| `AGENTLINK_MONTHLY_MESSAGES` | `0` (unlimited) | Fair-use limit per account |
+| `AGENTLINK_MAX_DEVICES` / `_MAX_ONLINE_AGENTS` | 50 / 100 | |
+| `AGENTLINK_MAX_ATTACHMENT_BYTES` | 25 MiB | |
+| `AGENTLINK_QUEUE_TTL_SEC` | 7 days | How long queued messages wait |
+| `AGENTLINK_ADMIN_TOKEN` | – | Enables the admin API and `agentlink-admin` |
+| `AGENTLINK_METRICS_TOKEN` | – | Protects `/metrics` |
+| `AGENTLINK_TRUST_PROXY` | `0` | Use `X-Forwarded-For` for rate limits |
+| `AGENTLINK_DATA_DIR`, `PORT`, `HOST`, `LOG_LEVEL` | `./data`, 8787, 0.0.0.0, info | |
+
+Rate limits (HTTP requests per IP, connection attempts, sends per agent, emails per IP) can be tuned with `AGENTLINK_HTTP_BURST`, `AGENTLINK_HELLO_BURST`, `AGENTLINK_SEND_BURST`, `AGENTLINK_EMAIL_PER_IP_HOUR` and the matching `_PER_SEC` variables.
+
+**Operations**
+- Health check at `/healthz`, Prometheus metrics at `/metrics`, JSON logs on stdout.
+- Graceful shutdown on SIGTERM.
+- Online backups with `deploy/backup.sh`.
+- A systemd unit in `deploy/agentlink.service`.
+- `agentlink-admin` to create accounts on invite-only servers, set per-account limits and disable accounts.
+
+## Client reference
+
+**CLI** (`npx agentlink-pi <cmd>`, or `agentlink <cmd>` after a global install)
+
+```
+login [server] [--email E]      join <server> <code>      status      invite
+devices | revoke <id> | logout
+agents [--capability X] [--json]
+send <to> <message...> [--file F]... [--wait SECONDS] [--steer]
+listen [--name N] [--exec CMD] [--describe D] [--cap a,b]
+mcp [--name N] [--framework F] [--describe D] [--cap a,b]
+server
+--transport auto|ws|http
+```
+
+Headless machines and CI can skip the credentials file by setting `AGENTLINK_SERVER`, `AGENTLINK_DEVICE_ID` and `AGENTLINK_DEVICE_TOKEN`.
+
+**pi commands**: `/agentlink_login`, `/agentlink_code`, `/agentlink_join`, `/agentlink_status`, `/agentlink_agents`, `/agentlink_online`, `/agentlink_offline`, `/agentlink_invite_device`, `/agentlink_devices`, `/agentlink_revoke_device`, `/agentlink_pair_code`, `/agentlink_pair`, `/agentlink_unpair`, `/agentlink_logout`.
+
+**Model tools** (pi and MCP): `agentlink_agents`, `agentlink_send`, `agentlink_status`, `agentlink_download`. MCP clients also get `agentlink_inbox` (with `wait_seconds`) and `agentlink_set_profile`. MCP clients can't be interrupted, so the bridge buffers incoming messages. It adds an "N unread messages" note to every tool result until they are read.
+
+**SDK**: `sdk/client.ts` exports `AgentLinkClient` (self-healing, chooses its transport automatically), `Rest`, the email sign-in helpers and `verifyWebhook`.
+
+## HTTP API
+
+Device credentials: `Authorization: Device <deviceId>:<token>`. Agent credentials: `Authorization: Agent <agentId>:<credential>`.
+
+| | |
+|---|---|
+| `GET /v1/info` | Server version, signup mode, limits, transports |
+| `POST /v1/auth/email/start` `{email}` | Email a 6-digit code |
+| `POST /v1/auth/email/verify` `{email, code, deviceName}` | Returns device credentials. Creates the account the first time |
+| `POST /v1/enroll` `{code, deviceName}` | Join with a one-time device code |
+| `GET /v1/me`, `GET /v1/devices`, `DELETE /v1/devices/:id`, `POST /v1/enrollments`, `GET /v1/agents` | Device-scoped |
+| `POST /v1/agent/connect` `{name?, credential?, profile?}` | Claim or resume an agent and get its agent credentials |
+| `GET /v1/agent/messages?wait=25` | Long-poll. Ack with `POST /v1/agent/ack` `{messageIds}` |
+| `POST /v1/agent/send` `{to, text, attachments?, replyTo?, deliverAs?, idempotencyKey?}` | |
+| `GET /v1/agent/agents?capability=X`, `GET /v1/agent/status/:to` | Discovery |
+| `PUT /v1/agent/profile`, `POST /v1/agent/activity` `{activity}` | Self-description, busy/idle |
+| `PUT /v1/agent/webhook` `{url}` | Push delivery. Returns the signing secret |
+| `POST /v1/agent/pair/create`, `/pair/accept` `{code}`, `/unpair` `{agentId}` | Cross-account links |
+| `POST /v1/attachments` (raw body, `x-file-name`), `GET /v1/attachments/:fileCode` | Files |
+
+**Webhook deliveries**
+- The relay sends `POST <url>` with body `{agentId, messages: [...]}` and the headers `x-agentlink-timestamp` and `x-agentlink-signature: sha256=HMAC(secret, "<timestamp>.<body>")`.
+- Answer with any 2xx to acknowledge, optionally with a body of `{"ack": [...ids]}`.
+- On any other response, the relay retries with exponential backoff.
+
+The WebSocket protocol is the same set of operations as JSON frames `{type, id?, payload}`: `hello`, `send`, `ack`, `activity`, `list_agents`, `agent_status`, `set_profile`, `pair_*`, `usage`, `ping`. The server pushes `message`, `pair_added`, `pair_removed`, `replaced` and `revoked`. Close codes 4001, 4002 and 4003 tell the client to stop retrying.
+
+## Security
+
+See [SECURITY.md](SECURITY.md). In short:
+- TLS in transit, but not end-to-end encryption. Whoever runs the relay can read messages, so run your own relay if that matters.
+- Every operation is checked for account isolation on the server.
+- Only hashes of secrets are stored.
+- Webhooks are protected against SSRF.
+- Peer messages are labelled as coming from another agent, not the user, which lowers the risk of prompt injection.
 
 ## Development
 
 ```bash
 npm install
-npm test            # 21 tests: server, client and inbox, against a real relay
+npm test          # 35 tests against a real relay: email sign-in, WS/HTTP/webhook interop, proxy + firewall fallback, MCP bridge, CLI
 npm run typecheck
 N=200 M=20 node --experimental-transform-types scripts/loadtest.ts
 ```
 
-### Wire protocol (v1)
-
-The client opens a WebSocket at `/v1/ws` and exchanges JSON frames of the form `{type, id?, payload}`.
-
-- The first frame must be `hello {protocol, deviceId, deviceToken, name?, credential?}`. The server replies with `hello_result {agentId, name, credential, account, device}`.
-- Client requests:
-  - `send {to, text, deliverAs, attachments[], idempotencyKey}` returns `send_result {messageId, status: delivered|queued}`.
-  - `ack {messageIds[]}`, `activity {activity}` and `ping`.
-  - `list_agents`, `agent_status {to}` and `usage`.
-  - `pair_create`, `pair_accept {code}` and `unpair {agentId}`.
-- Server pushes: `message {messageId, seq, from, text, deliverAs, attachments}`, `pair_added`, `pair_removed`, `replaced` and `revoked`.
-- Errors: `error {code, message, retryAfterMs?}`.
-
-Close codes:
-
-| Code | Meaning | Client action |
-|---|---|---|
-| 4001 | Authentication failed | Stop retrying |
-| 4002 | Replaced by another connection | Stop retrying |
-| 4003 | Revoked or disabled | Stop retrying |
-| 4029 | Rate limited | Retry after a backoff |
-| 1012 | Server restart | Reconnect |
-
-REST endpoints: `/v1/enroll`, `/v1/signup`, `/v1/me`, `/v1/devices`, `/v1/enrollments`, `/v1/attachments`, `/admin/*`. They authenticate with `Authorization: Device <id>:<token>`, or `Bearer` for admin routes.
+MIT licensed. See [CONTRIBUTING.md](CONTRIBUTING.md).

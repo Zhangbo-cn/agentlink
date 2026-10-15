@@ -7,11 +7,24 @@
     "noEmit": true,
     "allowImportingTsExtensions": true,
     "skipLibCheck": true,
-    "types": ["node"],
+    "types": [
+      "node"
+    ],
     "paths": {
-      "@earendil-works/pi-coding-agent": ["/home/zhang-pc/.npm-global/lib/node_modules/@earendil-works/pi-coding-agent/dist/index.d.ts"],
-      "typebox": ["/home/zhang-pc/.npm-global/lib/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/index.d.mts"]
+      "@earendil-works/pi-coding-agent": [
+        "/home/zhang-pc/.npm-global/lib/node_modules/@earendil-works/pi-coding-agent/dist/index.d.ts"
+      ],
+      "typebox": [
+        "/home/zhang-pc/.npm-global/lib/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/index.d.mts"
+      ]
     }
   },
-  "include": ["server/src", "extension", "test"]
+  "include": [
+    "server/src",
+    "extension",
+    "sdk",
+    "cli",
+    "test",
+    "examples"
+  ]
 }

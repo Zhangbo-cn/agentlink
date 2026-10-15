@@ -1,11 +1,11 @@
 // Rough throughput check: N agents in one account, each sends M messages to a random peer.
 import fs from "node:fs"; import os from "node:os"; import path from "node:path";
 import { startServer } from "../server/src/server.ts";
-import { AgentLinkClient, enroll } from "../extension/src/client.ts";
+import { AgentLinkClient, enroll } from "../sdk/client.ts";
 const N = Number(process.env.N ?? 50), M = Number(process.env.M ?? 40);
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "al-load-"));
 const s = await startServer({ port: 0, host: "127.0.0.1", dataDir: dir, adminToken: "x", logLevel: "silent", limits: { httpBurst: 1e6, httpPerSec: 1e6, helloBurst: 1e6, helloPerSec: 1e6 } as any,
-  plans: { free: { name: "free", monthlyMessages: 1e9, maxDevices: 1e4, maxOnlineAgents: 1e4, maxAttachmentBytes: 1, queueTtlSec: 3600 } } });
+  quotas: { monthlyMessages: 0, maxDevices: 0, maxOnlineAgents: 0, maxAttachmentBytes: 1, queueTtlSec: 3600 } });
 const acc = await (await fetch(s.url + "/admin/accounts", { method: "POST", headers: { authorization: "Bearer x" }, body: JSON.stringify({ name: "load" }) })).json() as any;
 const clients: AgentLinkClient[] = []; let received = 0;
 for (let i = 0; i < N; i++) {

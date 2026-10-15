@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { Inbox, formatDelivery, type Delivery } from "../extension/src/inbox.ts";
-import type { WireMessage } from "../extension/src/client.ts";
+import { Inbox, formatDelivery, type Delivery } from "../extension/inbox.ts";
+import type { WireMessage } from "../sdk/client.ts";
 
 let seq = 0;
 const m = (text: string, deliverAs: "steer" | "followUp" = "followUp", from = "a"): WireMessage => ({

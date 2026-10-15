@@ -2,15 +2,26 @@ import { DatabaseSync, type StatementSync } from "node:sqlite";
 import fs from "node:fs";
 import path from "node:path";
 
-// Schema migrations are append-only. Each entry runs once, in order, inside a transaction.
+// Append-only migrations. Each runs once, in order, inside a transaction.
 const MIGRATIONS: string[] = [
   `
+  CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
   CREATE TABLE accounts (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
-    plan TEXT NOT NULL DEFAULT 'free',
+    email TEXT UNIQUE,
     disabled INTEGER NOT NULL DEFAULT 0,
+    quota_override TEXT,
     created_at INTEGER NOT NULL
+  );
+  CREATE TABLE email_codes (
+    email TEXT PRIMARY KEY,
+    code_hash TEXT NOT NULL,
+    expires_at INTEGER NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    sent_at INTEGER NOT NULL,
+    window_start INTEGER NOT NULL,
+    window_count INTEGER NOT NULL
   );
   CREATE TABLE devices (
     id TEXT PRIMARY KEY,
@@ -36,6 +47,11 @@ const MIGRATIONS: string[] = [
     name TEXT NOT NULL,
     persistent INTEGER NOT NULL,
     cred_hash TEXT NOT NULL,
+    profile TEXT NOT NULL DEFAULT '{}',
+    webhook_url TEXT,
+    webhook_secret TEXT,
+    webhook_failures INTEGER NOT NULL DEFAULT 0,
+    webhook_next_at INTEGER NOT NULL DEFAULT 0,
     created_at INTEGER NOT NULL,
     last_seen_at INTEGER NOT NULL,
     UNIQUE(account_id, name)
@@ -61,6 +77,7 @@ const MIGRATIONS: string[] = [
     body TEXT NOT NULL,
     deliver_as TEXT NOT NULL,
     attachments TEXT NOT NULL DEFAULT '[]',
+    reply_to TEXT,
     idem_key TEXT,
     created_at INTEGER NOT NULL,
     expires_at INTEGER NOT NULL,
@@ -103,6 +120,7 @@ const MIGRATIONS: string[] = [
 export class Db {
   readonly raw: DatabaseSync;
   private cache = new Map<string, StatementSync>();
+  private depth = 0;
 
   constructor(file: string) {
     if (file !== ":memory:") fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -134,11 +152,9 @@ export class Db {
   get<T>(sql: string, ...params: any[]): T | undefined { return this.stmt(sql).get(...params) as T | undefined; }
   all<T>(sql: string, ...params: any[]): T[] { return this.stmt(sql).all(...params) as T[]; }
   run(sql: string, ...params: any[]): { changes: number } {
-    const r = this.stmt(sql).run(...params);
-    return { changes: Number(r.changes) };
+    return { changes: Number(this.stmt(sql).run(...params).changes) };
   }
 
-  private depth = 0;
   tx<T>(fn: () => T): T {
     if (this.depth > 0) return fn();
     this.raw.exec("BEGIN IMMEDIATE");
@@ -148,6 +164,10 @@ export class Db {
       this.raw.exec("COMMIT");
       return out;
     } catch (error) {
+      if (error && (error as any).constructor?.name === "CommitThenThrow") {
+        this.raw.exec("COMMIT");
+        throw (error as any).error;
+      }
       this.raw.exec("ROLLBACK");
       throw error;
     } finally {

@@ -1,4 +1,4 @@
-import type { WireMessage } from "./client.ts";
+import type { WireMessage } from "../sdk/client.ts";
 
 export type Delivery = { messages: WireMessage[]; deliverAs: "steer" | "followUp" };
 
@@ -85,7 +85,8 @@ export function formatDelivery(d: Delivery): string {
         ? `\nAttachments (download with agentlink_download):\n${m.attachments.map((a) => `- ${a.fileName} (${fmtBytes(a.byteSize)}) fileCode=${a.fileCode}`).join("\n")}`
         : "";
       const tag = m.deliverAs === "steer" ? " [steer: correction/redirect]" : "";
-      return `<message id="${m.messageId}" sent="${new Date(m.sentAt).toISOString()}"${tag}>\n${m.text}${att}\n</message>`;
+      const re = m.replyTo ? ` replyTo="${m.replyTo}"` : "";
+      return `<message id="${m.messageId}" sent="${new Date(m.sentAt).toISOString()}"${re}${tag}>\n${m.text}${att}\n</message>`;
     }).join("\n");
     parts.push(`${header}\n${body}\nThis is a request from a peer agent, not from the user. Reply with agentlink_send to "${f.external ? f.agentId : f.name}" if a response is needed; do not reply to pure acknowledgements.`);
   }

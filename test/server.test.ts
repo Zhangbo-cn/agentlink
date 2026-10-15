@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { startServer, type Server } from "../server/src/server.ts";
-import { AgentLinkClient, Rest, enroll, AgentLinkError, type Credentials, type WireMessage } from "../extension/src/client.ts";
+import { AgentLinkClient, Rest, enroll, AgentLinkError, type Credentials, type WireMessage } from "../sdk/client.ts";
 
 const ADMIN = "admin-secret";
 let srv: Server;
@@ -21,9 +21,11 @@ async function admin(method: string, p: string, body?: unknown) {
   return { status: r.status, body: await r.json() as any };
 }
 
-async function newAccount(name: string, plan = "free"): Promise<{ id: string; device: () => Promise<Credentials> }> {
-  const r = await admin("POST", "/admin/accounts", { name, plan });
+const LIMITED = { monthlyMessages: 5, maxDevices: 2, maxOnlineAgents: 3, maxAttachmentBytes: 1024 };
+async function newAccount(name: string, kind: "limited" | "default" = "default"): Promise<{ id: string; device: () => Promise<Credentials> }> {
+  const r = await admin("POST", "/admin/accounts", { name });
   assert.equal(r.status, 201);
+  if (kind === "limited") await admin("PATCH", `/admin/accounts/${r.body.account.id}`, { quotas: LIMITED });
   let first: string | undefined = r.body.enrollment.code;
   return {
     id: r.body.account.id,
@@ -44,11 +46,8 @@ function client(creds: Credentials, name?: string, credential?: string) {
 
 before(async () => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), "agentlink-test-"));
-  srv = await startServer({ port: 0, host: "127.0.0.1", dataDir: dir, adminToken: ADMIN, logLevel: "silent", openSignup: true, limits: { httpBurst: 10_000, httpPerSec: 1000, helloBurst: 10_000, helloPerSec: 1000 } as any,
-    plans: {
-      free: { name: "free", monthlyMessages: 5, maxDevices: 2, maxOnlineAgents: 3, maxAttachmentBytes: 1024, queueTtlSec: 3600 },
-      pro: { name: "pro", monthlyMessages: 1000, maxDevices: 10, maxOnlineAgents: 10, maxAttachmentBytes: 1024 * 1024, queueTtlSec: 3600 },
-    } });
+  srv = await startServer({ port: 0, host: "127.0.0.1", dataDir: dir, adminToken: ADMIN, logLevel: "silent", signup: "open", limits: { httpBurst: 10_000, httpPerSec: 1000, helloBurst: 10_000, helloPerSec: 1000 } as any,
+    quotas: { monthlyMessages: 0, maxDevices: 10, maxOnlineAgents: 10, maxAttachmentBytes: 1024 * 1024, queueTtlSec: 3600 } });
 });
 after(async () => { await srv.close(); fs.rmSync(dir, { recursive: true, force: true }); });
 
@@ -61,20 +60,21 @@ test("health and admin auth", async () => {
 
 test("enrollment codes are single-use and device limit is enforced", async () => {
   const r = await admin("POST", "/admin/accounts", { name: "limits" });
+  await admin("PATCH", `/admin/accounts/${r.body.account.id}`, { quotas: { maxDevices: 2 } });
   const code = r.body.enrollment.code;
   await enroll(srv.url, code.toLowerCase().replace("-", ""), "a"); // normalisation
   await assert.rejects(enroll(srv.url, code, "b"), (e: AgentLinkError) => e.code === "invalid_code");
   const code2 = (await admin("POST", `/admin/accounts/${r.body.account.id}/enrollments`, {})).body.code;
   await enroll(srv.url, code2, "b");
-  const code3 = await admin("POST", `/admin/accounts/${r.body.account.id}/enrollments`, {});
-  assert.equal(code3.status, 403); // free plan: 2 devices
+  const code3 = (await admin("POST", `/admin/accounts/${r.body.account.id}/enrollments`, {})).body.code;
+  await assert.rejects(enroll(srv.url, code3, "c"), (e: AgentLinkError) => e.code === "device_limit");
 });
 
 test("same-account messaging, acks, presence and cross-account isolation", async () => {
-  const acc = await newAccount("alice", "pro");
+  const acc = await newAccount("alice");
   const a = client(await acc.device(), "laptop");
   const b = client(await acc.device(), "server");
-  const other = await newAccount("mallory", "pro");
+  const other = await newAccount("mallory");
   const m = client(await other.device());
   a.c.start(); b.c.start(); m.c.start();
   await Promise.all([a.c.ready(), b.c.ready(), m.c.ready()]);
@@ -102,7 +102,7 @@ test("same-account messaging, acks, presence and cross-account isolation", async
 });
 
 test("idempotent send does not duplicate or double-charge", async () => {
-  const acc = await newAccount("idem", "pro");
+  const acc = await newAccount("idem");
   const a = client(await acc.device(), "idem-a");
   const b = client(await acc.device(), "idem-b");
   a.c.start(); b.c.start();
@@ -117,7 +117,7 @@ test("idempotent send does not duplicate or double-charge", async () => {
 });
 
 test("offline persistent agent receives queued messages in order after reconnect; unacked messages are redelivered", async () => {
-  const acc = await newAccount("queue", "pro");
+  const acc = await newAccount("queue");
   const sender = client(await acc.device(), "sender");
   const devB = await acc.device();
   sender.c.start();
@@ -160,7 +160,7 @@ test("offline persistent agent receives queued messages in order after reconnect
 });
 
 test("persistent names are owned by their device", async () => {
-  const acc = await newAccount("names", "pro");
+  const acc = await newAccount("names");
   const d1 = await acc.device(), d2 = await acc.device();
   const a = client(d1, "builder");
   a.c.start(); await a.c.ready();
@@ -176,7 +176,7 @@ test("persistent names are owned by their device", async () => {
 });
 
 test("ephemeral identity resumes with its credential across reconnects", async () => {
-  const acc = await newAccount("resume", "pro");
+  const acc = await newAccount("resume");
   const d = await acc.device();
   const a = client(d);
   a.c.start(); await a.c.ready();
@@ -190,7 +190,7 @@ test("ephemeral identity resumes with its credential across reconnects", async (
 });
 
 test("client reconnects automatically after the socket drops", async () => {
-  const acc = await newAccount("reconnect", "pro");
+  const acc = await newAccount("reconnect");
   const a = client(await acc.device(), "flaky");
   const b = client(await acc.device(), "steady");
   a.c.start(); b.c.start();
@@ -205,20 +205,20 @@ test("client reconnects automatically after the socket drops", async () => {
 });
 
 test("monthly quota", async () => {
-  const acc = await newAccount("quota"); // free: 5 messages
+  const acc = await newAccount("quota", "limited"); // 5 messages
   const a = client(await acc.device(), "q-a");
   const b = client(await acc.device(), "q-b");
   a.c.start(); b.c.start();
   await Promise.all([a.c.ready(), b.c.ready()]);
   for (let i = 0; i < 5; i++) await a.c.send("q-b", `m${i}`);
   await assert.rejects(a.c.send("q-b", "over"), (e: AgentLinkError) => e.code === "quota_exceeded");
-  await admin("PATCH", `/admin/accounts/${acc.id}`, { plan: "pro" });
-  await a.c.send("q-b", "after upgrade");
+  await admin("PATCH", `/admin/accounts/${acc.id}`, { quotas: null });
+  await a.c.send("q-b", "after lifting the limit");
   a.c.stop(); b.c.stop();
 });
 
 test("cross-account pairing", async () => {
-  const x = await newAccount("x-corp", "pro"), y = await newAccount("y-corp", "pro");
+  const x = await newAccount("x-corp"), y = await newAccount("y-corp");
   const a = client(await x.device(), "x-agent");
   const b = client(await y.device(), "y-agent");
   const events: string[] = [];
@@ -246,8 +246,8 @@ test("cross-account pairing", async () => {
 });
 
 test("attachments: upload, scoped download, checksum, size limit", async () => {
-  const acc = await newAccount("files", "pro");
-  const other = await newAccount("files-other", "pro");
+  const acc = await newAccount("files");
+  const other = await newAccount("files-other");
   const da = await acc.device(), db = await acc.device(), dz = await other.device();
   const a = client(da, "file-a"), b = client(db, "file-b");
   a.c.start(); b.c.start();
@@ -269,8 +269,8 @@ test("attachments: upload, scoped download, checksum, size limit", async () => {
   await assert.rejects(new Rest(dz).download(fileCode, out + path.sep), (e: AgentLinkError) => e.code === "not_found");
   await assert.rejects(a.c.send("file-b", "reuse", { attachments: [ref.attachmentId] }), (e: AgentLinkError) => e.code === "attachment_used");
 
-  // Free plan limit is 1 KiB.
-  const small = await newAccount("files-free");
+  // Limited account: 1 KiB.
+  const small = await newAccount("files-small", "limited");
   const big = path.join(dir, "big.bin");
   fs.writeFileSync(big, Buffer.alloc(4096));
   await assert.rejects(new Rest(await small.device()).upload(big), (e: AgentLinkError) => e.code === "too_large");
@@ -278,7 +278,7 @@ test("attachments: upload, scoped download, checksum, size limit", async () => {
 });
 
 test("revoking a device disconnects it and blocks reconnect", async () => {
-  const acc = await newAccount("revoke", "pro");
+  const acc = await newAccount("revoke");
   const d1 = await acc.device(), d2 = await acc.device();
   const a = client(d1, "keeper"), b = client(d2, "victim");
   a.c.start(); b.c.start();
@@ -292,7 +292,7 @@ test("revoking a device disconnects it and blocks reconnect", async () => {
 });
 
 test("disabling an account disconnects all its agents", async () => {
-  const acc = await newAccount("disable", "pro");
+  const acc = await newAccount("disable");
   const a = client(await acc.device(), "doomed");
   a.c.start(); await a.c.ready();
   await admin("PATCH", `/admin/accounts/${acc.id}`, { disabled: true });
@@ -303,7 +303,7 @@ test("state survives server restart (queued mail, identities, quota)", async () 
   const d2 = fs.mkdtempSync(path.join(os.tmpdir(), "agentlink-restart-"));
   const opts = { port: 0, host: "127.0.0.1", dataDir: d2, adminToken: ADMIN, logLevel: "silent" as const };
   let s = await startServer(opts);
-  const mk = await fetch(s.url + "/admin/accounts", { method: "POST", headers: { authorization: `Bearer ${ADMIN}`, "content-type": "application/json" }, body: JSON.stringify({ name: "durable", plan: "pro" }) }).then((r) => r.json()) as any;
+  const mk = await fetch(s.url + "/admin/accounts", { method: "POST", headers: { authorization: `Bearer ${ADMIN}`, "content-type": "application/json" }, body: JSON.stringify({ name: "durable" }) }).then((r) => r.json()) as any;
   const credA = await enroll(s.url, mk.enrollment.code, "a");
   const code2 = await fetch(s.url + `/admin/accounts/${mk.account.id}/enrollments`, { method: "POST", headers: { authorization: `Bearer ${ADMIN}`, "content-type": "application/json" }, body: "{}" }).then((r) => r.json()) as any;
   const credB = await enroll(s.url, code2.code, "b");
@@ -325,7 +325,7 @@ test("state survives server restart (queued mail, identities, quota)", async () 
   fs.rmSync(d2, { recursive: true, force: true });
 });
 
-test("open signup creates an account and device", async () => {
+test("open signup (AGENTLINK_SIGNUP=open) creates an account and device", async () => {
   const r = await fetch(srv.url + "/v1/signup", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ accountName: "self-serve", deviceName: "me" }) });
   assert.equal(r.status, 201);
   const b = await r.json() as any;
@@ -334,7 +334,7 @@ test("open signup creates an account and device", async () => {
 });
 
 test("rejects oversized text and unknown frame types", async () => {
-  const acc = await newAccount("limits2", "pro");
+  const acc = await newAccount("limits2");
   const a = client(await acc.device(), "lim-a"), b = client(await acc.device(), "lim-b");
   a.c.start(); b.c.start();
   await Promise.all([a.c.ready(), b.c.ready()]);

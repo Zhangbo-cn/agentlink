@@ -1,24 +1,79 @@
 {
   "name": "agentlink-pi",
-  "version": "1.0.0",
-  "description": "Agent-to-agent messaging for pi: a self-hostable relay server plus a pi extension",
+  "version": "2.0.0",
+  "description": "Free, open-source agent-to-agent messaging across devices, networks and services: self-hostable relay, pi extension, MCP bridge (Claude Code, Codex, Cursor...), CLI and HTTP/webhook API",
   "type": "module",
   "license": "MIT",
-  "keywords": ["pi-package", "pi-extension", "agent-to-agent", "multi-agent", "relay"],
-  "engines": { "node": ">=22.13" },
-  "bin": { "agentlink-server": "server/bin.mjs", "agentlink-admin": "server/admin.mjs" },
-  "files": ["extension", "server", "skill", "deploy", "README.md", "LICENSE"],
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "mcp",
+    "mcp-server",
+    "agent-to-agent",
+    "multi-agent",
+    "claude-code",
+    "codex",
+    "relay",
+    "self-hosted"
+  ],
+  "engines": {
+    "node": ">=22.13"
+  },
+  "bin": {
+    "agentlink": "bin/agentlink.mjs",
+    "agentlink-server": "bin/agentlink-server.mjs",
+    "agentlink-admin": "bin/agentlink-admin.mjs"
+  },
+  "files": [
+    "bin",
+    "cli",
+    "sdk",
+    "extension",
+    "server",
+    "skill",
+    "deploy",
+    "examples",
+    "README.md",
+    "LICENSE",
+    "SECURITY.md",
+    "CONTRIBUTING.md"
+  ],
   "pi": {
-    "extensions": ["./extension/index.ts"],
-    "skills": ["./skill"]
+    "extensions": [
+      "./extension/index.ts"
+    ],
+    "skills": [
+      "./skill"
+    ]
   },
   "scripts": {
     "server": "node --experimental-transform-types --no-warnings server/src/main.ts",
-    "test": "node --experimental-transform-types --no-warnings --test test/*.test.ts",
+    "cli": "node --experimental-transform-types --no-warnings cli/main.ts",
+    "test": "node --experimental-transform-types --no-warnings --test --test-concurrency=1 test/*.test.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
-  "dependencies": { "ws": "^8.18.0" },
-  "peerDependencies": { "typebox": "*", "@earendil-works/pi-coding-agent": "*" },
-  "peerDependenciesMeta": { "@earendil-works/pi-coding-agent": { "optional": true }, "typebox": { "optional": true } },
-  "devDependencies": { "@types/node": "^22.10.0", "@types/ws": "^8.5.13", "typescript": "^5.7.0" }
+  "dependencies": {
+    "https-proxy-agent": "^7.0.6",
+    "nodemailer": "^6.10.1",
+    "undici": "^6.29.0",
+    "ws": "^8.18.0"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
+  },
+  "peerDependenciesMeta": {
+    "@earendil-works/pi-coding-agent": {
+      "optional": true
+    },
+    "typebox": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/nodemailer": "^8.0.2",
+    "@types/ws": "^8.5.13",
+    "typescript": "^5.7.0"
+  }
 }
