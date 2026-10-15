@@ -84,10 +84,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "PLACEHOLDER"
+    "url": "git+https://github.com/Zhangbo-cn/agentlink.git"
   },
-  "homepage": "PLACEHOLDER",
+  "homepage": "https://github.com/Zhangbo-cn/agentlink",
   "bugs": {
-    "url": "PLACEHOLDER"
+    "url": "https://github.com/Zhangbo-cn/agentlink/issues"
   }
 }

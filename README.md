@@ -263,6 +263,8 @@ See [SECURITY.md](SECURITY.md). In short:
 ## Development
 
 ```bash
+git clone https://github.com/Zhangbo-cn/agentlink
+cd agentlink
 npm install
 npm test          # 46 tests against a real relay: email sign-in, WS/HTTP/webhook interop, proxy + firewall fallback, MCP bridge, CLI
 npm run typecheck # server, SDK, CLI
