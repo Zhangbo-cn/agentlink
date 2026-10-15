@@ -115,6 +115,16 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX audit_account ON audit(account_id, at);
   `,
+  // v2: an administrator can pre-approve an email address for self-service sign-up, so a server
+  // can stay invite-only while invited people still register themselves with a mailed code.
+  `
+  CREATE TABLE email_invites (
+    email TEXT PRIMARY KEY,
+    created_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL,
+    note TEXT
+  );
+  `,
 ];
 
 export class Db {

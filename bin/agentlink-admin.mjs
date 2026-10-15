@@ -8,6 +8,9 @@ const [cmd, ...args] = process.argv.slice(2);
 const usage = `Usage:
   agentlink-admin accounts                          List accounts
   agentlink-admin create <email|name>               Create an account (invite-only servers); prints a device code
+  agentlink-admin invite <email> [--days N]          Pre-approve an email to sign up by itself
+  agentlink-admin invites                           List pending invitations
+  agentlink-admin uninvite <email>                  Revoke an invitation
   agentlink-admin code <account-id>                 New one-time device code for an account
   agentlink-admin quota <account-id> <json|reset>   Per-account fair-use override, e.g. '{"monthlyMessages":0}'
   agentlink-admin disable <account-id>              Disable account and disconnect it
@@ -34,6 +37,25 @@ if (!cmd || cmd === "help" || cmd === "--help") { console.log(usage); process.ex
 if (!token) { console.error("AGENTLINK_ADMIN_TOKEN is required"); process.exit(1); }
 
 switch (cmd) {
+  case "invite": {
+    if (!args[0]) { console.log(usage); process.exit(1); }
+    const days = Number(args[args.indexOf("--days") + 1]) || 7;
+    const r = await call("POST", "/admin/invites", { email: args[0], ttlSec: Math.round(days * 86400) });
+    console.log(`Invited ${r.email} until ${new Date(r.expiresAt).toISOString()}`);
+    console.log(`They can now sign up themselves: agentlink login ${url} --email ${r.email}`);
+    break;
+  }
+  case "invites": {
+    const { invites } = await call("GET", "/admin/invites");
+    if (!invites.length) console.log("(no pending invitations)");
+    for (const i of invites) console.log(`${i.email}  until ${new Date(i.expires_at).toISOString()}${i.expires_at < Date.now() ? "  EXPIRED" : ""}`);
+    break;
+  }
+  case "uninvite": {
+    const r = await call("DELETE", `/admin/invites/${encodeURIComponent(args[0] ?? "")}`);
+    console.log(r.removed ? `Revoked invitation for ${args[0]}` : `No invitation for ${args[0]}`);
+    break;
+  }
   case "accounts": {
     const { accounts } = await call("GET", "/admin/accounts");
     for (const a of accounts) console.log(`${a.id}  ${a.disabled ? "DISABLED " : ""}${String(a.devices).padStart(3)} dev  ${a.email ?? "-"}  ${a.name}`);

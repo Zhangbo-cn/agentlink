@@ -106,14 +106,61 @@ export class Store {
     return crypto.createHmac("sha256", this.pepper).update(`${email}:${code}`).digest("hex");
   }
 
+  private mayCreateAccount(email: string): void {
+    if (this.cfg.signup === "open") return;
+    if (this.cfg.signup === "invite") {
+      if (this.inviteFor(email)) return;
+      throw new ApiError("signup_closed", "This server only allows invited accounts. Ask the administrator to invite your email.", 403);
+    }
+    const domain = email.split("@")[1];
+    if (this.cfg.emailDomains.length && !this.cfg.emailDomains.includes(domain)) {
+      throw new ApiError("domain_not_allowed", `Sign-up is limited to: ${this.cfg.emailDomains.join(", ")}`, 403);
+    }
+  }
+
+  // ---------------------------------------------------------------- email invitations (admin)
+
+  /** Non-expired invitation for this email, if any. */
+  inviteFor(rawEmail: string): { email: string; expires_at: number; note: string | null } | undefined {
+    const email = this.normalizeEmail(rawEmail);
+    const row = this.db.get<{ email: string; expires_at: number; note: string | null }>("SELECT email, expires_at, note FROM email_invites WHERE email = ?", email);
+    if (!row || row.expires_at < now()) return undefined;
+    return row;
+  }
+
+  listInvites(): { email: string; created_at: number; expires_at: number; note: string | null }[] {
+    return this.db.all("SELECT * FROM email_invites ORDER BY created_at DESC");
+  }
+
+  createInvite(rawEmail: string, ttlSec = 7 * 24 * 3600, note?: string): { email: string; expiresAt: number } {
+    const email = this.normalizeEmail(rawEmail);
+    if (this.db.get("SELECT 1 FROM accounts WHERE email = ?", email)) throw new ApiError("email_taken", "An account with this email already exists", 409);
+    const expiresAt = now() + Math.max(60, ttlSec) * 1000;
+    this.db.run(
+      `INSERT INTO email_invites (email, created_at, expires_at, note) VALUES (?, ?, ?, ?)
+       ON CONFLICT(email) DO UPDATE SET expires_at = excluded.expires_at, note = excluded.note`,
+      email, now(), expiresAt, note ?? null);
+    this.audit(null, "admin", "invite.create", { email, expiresAt, note });
+    return { email, expiresAt };
+  }
+
+  revokeInvite(rawEmail: string): boolean {
+    const email = this.normalizeEmail(rawEmail);
+    const r = this.db.run("DELETE FROM email_invites WHERE email = ?", email);
+    this.audit(null, "admin", "invite.revoke", { email });
+    return r.changes > 0;
+  }
+
+  private consumeInvite(email: string): void {
+    this.db.run("DELETE FROM email_invites WHERE email = ?", email);
+  }
+
   /** Create a 6-digit code for the email. Returns null if the caller must wait (no new code issued). */
   startEmailLogin(rawEmail: string): { email: string; code: string; isNew: boolean } {
     const email = this.normalizeEmail(rawEmail);
     const existing = this.db.get<{ id: string }>("SELECT id FROM accounts WHERE email = ?", email);
     if (!existing) {
-      if (this.cfg.signup === "invite") throw new ApiError("signup_closed", "This server only allows invited accounts. Ask the administrator to add your email.", 403);
-      const domain = email.split("@")[1];
-      if (this.cfg.emailDomains.length && !this.cfg.emailDomains.includes(domain)) throw new ApiError("domain_not_allowed", `Sign-up is limited to: ${this.cfg.emailDomains.join(", ")}`, 403);
+      this.mayCreateAccount(email);
     }
     const t = now();
     const row = this.db.get<{ sent_at: number; window_start: number; window_count: number }>("SELECT sent_at, window_start, window_count FROM email_codes WHERE email = ?", email);
@@ -146,8 +193,9 @@ export class Store {
       let account = this.db.get<Account>("SELECT * FROM accounts WHERE email = ?", email);
       let created = false;
       if (!account) {
-        if (this.cfg.signup === "invite") throw new ApiError("signup_closed", "This server only allows invited accounts.", 403);
+        this.mayCreateAccount(email);
         account = this.createAccount(email.split("@")[0], email, "email");
+        this.consumeInvite(email);
         created = true;
       }
       if (account.disabled) throw new ApiError("account_disabled", "Account is disabled", 403);

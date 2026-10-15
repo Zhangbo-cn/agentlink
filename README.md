@@ -108,6 +108,37 @@ All settings are environment variables. See [deploy/.env.example](deploy/.env.ex
 | `AGENTLINK_TRUST_PROXY` | `0` | Use `X-Forwarded-For` for rate limits |
 | `AGENTLINK_DATA_DIR`, `PORT`, `HOST`, `LOG_LEVEL` | `./data`, 8787, 0.0.0.0, info | |
 
+### One relay, two ways in
+
+A single server can serve both a private network and the public internet; nothing in the protocol changes,
+you just point agents at different addresses.
+
+```bash
+# Your own devices: a private address (LAN IP or a Tailscale/WireGuard address)
+agentlink login http://192.168.1.20:8787 --email you@example.com
+
+# Everyone else: the public hostname, TLS terminated by the reverse proxy
+agentlink login https://relay.example.com --email them@example.com
+```
+
+Both entries hit the same database and the same account space, so a device on your LAN and a device on
+the other side of the internet message each other normally. Set `AGENTLINK_PUBLIC_URL` to the public
+hostname (sign-in mails link to it) and `AGENTLINK_TRUST_PROXY=1` behind Caddy/nginx so per-IP rate
+limits see the real client address.
+
+Access control can be layered on top of that:
+
+| Who | Setting | Result |
+|---|---|---|
+| Just you | `AGENTLINK_SIGNUP=invite` | Nobody new gets in unless you invite them |
+| A team | `AGENTLINK_SIGNUP=email` + `AGENTLINK_EMAIL_DOMAINS=yourcompany.com` | Only that domain can self-register |
+| You + invited outsiders | `AGENTLINK_SIGNUP=invite` + `agentlink-admin invite them@example.com` | Invited people register themselves with a mailed code; everyone else is refused |
+
+```bash
+AGENTLINK_URL=https://relay.example.com AGENTLINK_ADMIN_TOKEN=... agentlink-admin invite them@example.com
+AGENTLINK_URL=https://relay.example.com AGENTLINK_ADMIN_TOKEN=... agentlink-admin invites
+```
+
 ### Running without email at all
 
 Email is only used to verify identity at sign-up / new-device sign-in. Message delivery never touches it.
@@ -233,7 +264,7 @@ See [SECURITY.md](SECURITY.md). In short:
 
 ```bash
 npm install
-npm test          # 45 tests against a real relay: email sign-in, WS/HTTP/webhook interop, proxy + firewall fallback, MCP bridge, CLI
+npm test          # 46 tests against a real relay: email sign-in, WS/HTTP/webhook interop, proxy + firewall fallback, MCP bridge, CLI
 npm run typecheck
 N=200 M=20 node --experimental-transform-types scripts/loadtest.ts
 ```

@@ -486,3 +486,48 @@ test("deleting an agent frees its name and stops it resolving for peers", async 
   await assert.rejects(new Rest(creds).post("/v1/agent/connect", { name: "old-bot" }), (e: AgentLinkError) => e.code === "name_in_use");
   bot.c.stop();
 });
+
+// ------------------------------------------------------------------ invite-only sign-up
+
+test("invite-only server: only a pre-approved email can register, and the invitation is single-use", async () => {
+  const dir2 = fs.mkdtempSync(path.join(os.tmpdir(), "agentlink-invite-"));
+  const srv2 = await startServer({
+    port: 0, host: "127.0.0.1", dataDir: dir2, logLevel: "silent", mailer, webhooks: "off", signup: "invite", adminToken: "adm_test",
+    limits: { httpBurst: 10_000, httpPerSec: 1000, helloBurst: 10_000, helloPerSec: 1000, emailPerIpPerHour: 1000, redeliverAfterMs: 1000 } as any,
+  });
+  const admin = (init?: RequestInit) => fetch(new URL("/admin/invites", srv2.url), { ...init, headers: { authorization: "Bearer adm_test", "content-type": "application/json", ...(init?.headers ?? {}) } });
+  try {
+    // Without an invitation nobody new gets in, even with a valid-looking email.
+    await assert.rejects(startEmailLogin(srv2.url, "outsider@example.com"), (e: AgentLinkError) => e.code === "signup_closed");
+
+    // Admin invites one address; that address signs itself up with a mailed code.
+    assert.equal((await admin({ method: "POST", body: JSON.stringify({ email: "Guest@Example.com" }) })).status, 201);
+    await assert.rejects(startEmailLogin(srv2.url, "still-outsider@example.com"), (e: AgentLinkError) => e.code === "signup_closed");
+    const started = await startEmailLogin(srv2.url, "guest@example.com");
+    assert.equal(started.newAccount, true);
+    const guest = await verifyEmailLogin(srv2.url, "guest@example.com", mailer.codeFor("guest@example.com"), "guest-laptop");
+    assert.equal(guest.created, true);
+
+    // Consumed: gone from the list, and a second account cannot reuse it.
+    assert.deepEqual((await (await admin()).json()).invites, []);
+
+    // An existing account is unaffected by invite mode: same email, new device.
+    srv2.store.db.run("UPDATE email_codes SET sent_at = 0 WHERE email = ?", "guest@example.com");
+    await startEmailLogin(srv2.url, "guest@example.com");
+    const second = await verifyEmailLogin(srv2.url, "guest@example.com", mailer.codeFor("guest@example.com"), "guest-phone");
+    assert.equal(second.created, false);
+    assert.notEqual(second.deviceId, guest.deviceId);
+
+    // Revoking an invitation takes it back.
+    await admin({ method: "POST", body: JSON.stringify({ email: "drops@example.com" }) });
+    const revoked = await fetch(new URL("/admin/invites/drops@example.com", srv2.url), { method: "DELETE", headers: { authorization: "Bearer adm_test" } });
+    assert.equal((await revoked.json()).removed, true);
+    await assert.rejects(startEmailLogin(srv2.url, "drops@example.com"), (e: AgentLinkError) => e.code === "signup_closed");
+
+    // Admin endpoints need the token.
+    assert.equal((await fetch(new URL("/admin/invites", srv2.url))).status, 401);
+  } finally {
+    await srv2.close();
+    fs.rmSync(dir2, { recursive: true, force: true });
+  }
+});

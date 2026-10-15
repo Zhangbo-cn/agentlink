@@ -351,6 +351,19 @@ export async function startServer(overrides: Partial<Config> & { mailer?: Mailer
 
   // ---------------------------------------------------------------- admin
 
+  route("GET", "/admin/invites", (req, res) => { adminAuth(req); json(res, 200, { ok: true, invites: store.listInvites() }); });
+
+  route("POST", "/admin/invites", async (req, res) => {
+    adminAuth(req);
+    const b = await readJson(req);
+    json(res, 201, { ok: true, ...store.createInvite(String(b.email ?? ""), Number(b.ttlSec) || 7 * 24 * 3600, b.note ? String(b.note) : undefined) });
+  });
+
+  route("DELETE", "/admin/invites/:email", (req, res, [email]) => {
+    adminAuth(req);
+    json(res, 200, { ok: true, removed: store.revokeInvite(decodeURIComponent(email)) });
+  });
+
   route("GET", "/admin/accounts", (req, res) => { adminAuth(req); json(res, 200, { ok: true, accounts: store.listAccounts() }); });
 
   route("POST", "/admin/accounts", async (req, res) => {
