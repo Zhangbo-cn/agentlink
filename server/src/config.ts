@@ -24,6 +24,9 @@ export type Config = {
   /** Optional allowlist of email domains for signup, e.g. ["example.com"]. Empty = any. */
   emailDomains: string[];
   smtpUrl: string;
+  /** Alternative to smtpUrl: provider preset (qq, 163, 126, gmail, ...) or explicit host, plus user/pass. */
+  smtp: { provider?: string; host?: string; port?: number; secure?: boolean; user?: string; pass?: string; insecureTls?: boolean };
+  /** Defaults to the SMTP login address (required by QQ/163/Gmail). */
   mailFrom: string;
   trustProxy: boolean;
   /** public: https + no private IPs (default). private: allow LAN/loopback targets (self-hosted intranets). off: disabled. */
@@ -65,7 +68,16 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, overrides: Part
     signup,
     emailDomains: (env.AGENTLINK_EMAIL_DOMAINS ?? "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean),
     smtpUrl: env.AGENTLINK_SMTP_URL ?? "",
-    mailFrom: env.AGENTLINK_MAIL_FROM ?? "AgentLink <no-reply@localhost>",
+    smtp: {
+      provider: env.AGENTLINK_SMTP_PROVIDER || undefined,
+      host: env.AGENTLINK_SMTP_HOST || undefined,
+      port: env.AGENTLINK_SMTP_PORT ? Number(env.AGENTLINK_SMTP_PORT) : undefined,
+      secure: env.AGENTLINK_SMTP_SECURE ? env.AGENTLINK_SMTP_SECURE === "1" || env.AGENTLINK_SMTP_SECURE === "true" : undefined,
+      user: env.AGENTLINK_SMTP_USER || undefined,
+      pass: env.AGENTLINK_SMTP_PASS || undefined,
+      insecureTls: env.AGENTLINK_SMTP_INSECURE_TLS === "1",
+    },
+    mailFrom: env.AGENTLINK_MAIL_FROM ?? "",
     trustProxy: env.AGENTLINK_TRUST_PROXY === "1",
     webhooks: (env.AGENTLINK_WEBHOOKS as Config["webhooks"]) ?? "public",
     logLevel: (env.LOG_LEVEL as Config["logLevel"]) ?? "info",
@@ -98,6 +110,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, overrides: Part
     ...base,
     ...overrides,
     quotas: { ...base.quotas, ...(overrides.quotas ?? {}) },
+    smtp: { ...base.smtp, ...(overrides.smtp ?? {}) },
     limits: { ...base.limits, ...(overrides.limits ?? {}) },
   };
 }

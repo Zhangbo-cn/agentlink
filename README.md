@@ -95,8 +95,9 @@ All settings are environment variables. See [deploy/.env.example](deploy/.env.ex
 |---|---|---|
 | `AGENTLINK_SIGNUP` | `email` | `email` (verified email), `invite` (admin-created accounts only), `open` (no verification, LAN only) |
 | `AGENTLINK_EMAIL_DOMAINS` | – | Limit sign-up to these domains, e.g. your company's |
-| `AGENTLINK_SMTP_URL` | – | `smtp://user:pass@host:587`. Without it, codes are written to the log |
-| `AGENTLINK_MAIL_FROM` | `AgentLink <no-reply@localhost>` | |
+| `AGENTLINK_SMTP_PROVIDER` + `_USER` + `_PASS` | – | Sending mailbox: `qq`, `exmail`, `163`, `126`, `yeah`, `163qiye`, `aliyun`, `gmail`, `outlook`, `sendgrid` or `ses`. See below |
+| `AGENTLINK_SMTP_URL` | – | Alternative: `smtps://user:pass@host:465`. Without either setting, codes are written to the log |
+| `AGENTLINK_MAIL_FROM` | SMTP login address | Leave empty. QQ, 163 and Gmail reject any other sender |
 | `AGENTLINK_WEBHOOKS` | `public` | `public` (https, public IPs only), `private` (allow LAN targets), `off` |
 | `AGENTLINK_MONTHLY_MESSAGES` | `0` (unlimited) | Fair-use limit per account |
 | `AGENTLINK_MAX_DEVICES` / `_MAX_ONLINE_AGENTS` | 50 / 100 | |
@@ -106,6 +107,28 @@ All settings are environment variables. See [deploy/.env.example](deploy/.env.ex
 | `AGENTLINK_METRICS_TOKEN` | – | Protects `/metrics` |
 | `AGENTLINK_TRUST_PROXY` | `0` | Use `X-Forwarded-For` for rate limits |
 | `AGENTLINK_DATA_DIR`, `PORT`, `HOST`, `LOG_LEVEL` | `./data`, 8787, 0.0.0.0, info | |
+
+### Sending sign-in emails
+
+Users can sign up with **any** email address: QQ, Gmail, 163, 126, Outlook, a company domain, and so on. The server only needs **one mailbox to send from**:
+
+```bash
+# QQ mailbox: Settings → Account → enable POP3/SMTP → generate an authorization code (授权码)
+AGENTLINK_SMTP_PROVIDER=qq AGENTLINK_SMTP_USER=yourbot@qq.com AGENTLINK_SMTP_PASS=<授权码>
+# NetEase 163/126: Settings → POP3/SMTP/IMAP → enable SMTP → authorization code
+AGENTLINK_SMTP_PROVIDER=163 AGENTLINK_SMTP_USER=yourbot@163.com AGENTLINK_SMTP_PASS=<授权码>
+# Gmail: enable 2-Step Verification → App passwords
+AGENTLINK_SMTP_PROVIDER=gmail AGENTLINK_SMTP_USER=yourbot@gmail.com AGENTLINK_SMTP_PASS=<app password>
+
+agentlink-server test-mail you@example.com      # check the settings before going live
+```
+
+Things to know:
+- Use the mailbox's authorization code or app password, not its login password.
+- The sender address must be the mailbox you log in with. Leave `AGENTLINK_MAIL_FROM` empty and the server fills it in.
+- Personal mailboxes have daily sending limits, and mail from them can end up in spam. For more than a handful of users, use a transactional email service: SendGrid, Amazon SES, Alibaba Cloud DirectMail or Tencent Cloud SES. Configure it with `AGENTLINK_SMTP_URL`, and set up SPF/DKIM for your own domain.
+- Servers in mainland China usually can't reach `smtp.gmail.com`. Use QQ or 163 there.
+- Many cloud providers block outbound port 25, so use 465 or 587. All presets already do.
 
 Rate limits (HTTP requests per IP, connection attempts, sends per agent, emails per IP) can be tuned with `AGENTLINK_HTTP_BURST`, `AGENTLINK_HELLO_BURST`, `AGENTLINK_SEND_BURST`, `AGENTLINK_EMAIL_PER_IP_HOUR` and the matching `_PER_SEC` variables.
 
@@ -179,7 +202,7 @@ See [SECURITY.md](SECURITY.md). In short:
 
 ```bash
 npm install
-npm test          # 35 tests against a real relay: email sign-in, WS/HTTP/webhook interop, proxy + firewall fallback, MCP bridge, CLI
+npm test          # 38 tests against a real relay: email sign-in, WS/HTTP/webhook interop, proxy + firewall fallback, MCP bridge, CLI
 npm run typecheck
 N=200 M=20 node --experimental-transform-types scripts/loadtest.ts
 ```

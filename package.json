@@ -71,9 +71,13 @@
     }
   },
   "devDependencies": {
+    "@types/mailparser": "^3.9.0",
     "@types/node": "^22.10.0",
     "@types/nodemailer": "^8.0.2",
+    "@types/smtp-server": "^3.5.13",
     "@types/ws": "^8.5.13",
+    "mailparser": "^3.9.39",
+    "smtp-server": "^3.19.22",
     "typescript": "^5.7.0"
   }
 }

@@ -9,7 +9,7 @@ import { Db } from "./db.ts";
 import { Store, ApiError, type Device, type Account, type AgentRow } from "./store.ts";
 import { Hub, PROTOCOL_VERSION } from "./hub.ts";
 import { loadConfig, type Config } from "./config.ts";
-import { createMailer, loginEmail, type Mailer } from "./mailer.ts";
+import { createMailer, explainSmtpError, loginEmail, type Mailer } from "./mailer.ts";
 import { Logger, Metrics, RateLimiter, safeEqual } from "./util.ts";
 
 export const VERSION = "2.0.0";
@@ -126,9 +126,9 @@ export async function startServer(overrides: Partial<Config> & { mailer?: Mailer
     const { email, code, isNew } = store.startEmailLogin(String(b.email ?? ""));
     const mail = loginEmail(code, cfg);
     try {
-      await mailer.send(email, mail.subject, mail.text);
+      await mailer.send(email, mail.subject, mail.text, mail.html);
     } catch (error) {
-      log.error("mail.send_failed", { email, err: String((error as Error)?.message ?? error) });
+      log.error("mail.send_failed", { email, err: explainSmtpError(error) });
       throw new ApiError("mail_failed", "Could not send the email. Try again later.", 502);
     }
     metrics.inc("email_codes_sent");
@@ -412,6 +412,10 @@ export async function startServer(overrides: Partial<Config> & { mailer?: Mailer
   await new Promise<void>((resolve) => server.listen(cfg.port, cfg.host, resolve));
   const port = (server.address() as { port: number }).port;
   log.info("server.listening", { port, version: VERSION, dataDir: cfg.dataDir, signup: cfg.signup, mail: mailer.kind, webhooks: cfg.webhooks });
+  if (mailer.verify) {
+    // Non-fatal: report SMTP problems at startup instead of at the first sign-in.
+    mailer.verify().then(() => log.info("mail.smtp_ok")).catch((e) => log.error("mail.smtp_check_failed", { err: explainSmtpError(e) }));
+  }
   if (cfg.signup === "email" && mailer.kind === "log") log.warn("No AGENTLINK_SMTP_URL set: sign-in codes are written to this log instead of emailed");
   if (cfg.signup === "open") log.warn("AGENTLINK_SIGNUP=open: accounts can be created without email verification. Use only on trusted networks.");
 
