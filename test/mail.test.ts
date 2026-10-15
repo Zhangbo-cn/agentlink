@@ -84,7 +84,7 @@ test("config warnings catch the real paste mistakes", () => {
   const w = (smtp: any, extra: any = {}) => smtpConfigWarnings({ ...baseCfg(), smtp, ...extra });
   assert.match(w({ provider: "163", user: "a@163.com", pass: "" })[0], /是空的/);
   // `read -s -p "授权码: XXXXX" VAR` swallows the prompt text into the variable
-  assert.match(w({ provider: "163", user: "a@163.com", pass: "授权码: KWiag\nbZKn4AULXRN" })[0], /含空格、换行或引号/);
+  assert.match(w({ provider: "163", user: "a@163.com", pass: "授权码: KWiag\nbZKn4AULXRN" })[0], /是空格\/引号/);
   assert.match(w({ provider: "qq", user: "a@qq.com", pass: "你的授权码" })[0], /占位符|登录密码|授权码/);
   assert.match(w({ provider: "163", user: "a@163.com", pass: "short" })[0], /16 位/);
   assert.match(w({ provider: "qq", user: "not-an-email", pass: "ABCDEFGHIJKLMNOP" })[0], /完整邮箱地址/);
