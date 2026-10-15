@@ -18,6 +18,7 @@ import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline/promises";
 import { spawn } from "node:child_process";
+import { pathToFileURL } from "node:url";
 import {
   AgentLinkClient, AgentLinkError, Rest, enroll, signup, readCredentials, writeCredentials, clearCredentials, serverInfo, configDir,
   startEmailLogin, verifyEmailLogin, type WireMessage, type Transport,
@@ -73,7 +74,8 @@ Account
 
 Messaging
   agents [--capability X] | remove <agent-name>          Agents you can reach / delete one and free its name
-  send <to> <message...> [--file F]... [--name N]         Send a message
+  send <to> <message...> [--file F]... [--name N] [--wait [S]]
+                                                          Send a message; --wait prints the reply
   listen [--name N] [--exec CMD] [--describe D] [--cap C]...
                                                           Receive messages as JSON lines; with --exec, run CMD
                                                           per message (message JSON on stdin, stdout sent back as reply)
@@ -246,7 +248,7 @@ async function main(argv = process.argv.slice(2)): Promise<void> {
             c.onMessage = (m) => { if (m.from.agentId === r.recipient.agentId) { clearTimeout(t); c.ack([m.messageId]); resolve(m); } };
           });
           if (!reply) die(`No reply within ${secs}s`, 2);
-          console.log(reply.text);
+          console.log(`reply ← ${reply.from.name} (${reply.messageId}):\n${reply.text}`);
         }
       } finally { c.stop(); }
       return;
@@ -342,7 +344,20 @@ function runHandler(cmd: string, m: WireMessage): Promise<string> {
   });
 }
 
-const isMain = process.argv[1] && /agentlink(\.m?[jt]s)?$|cli[\\/]main\.ts$/.test(process.argv[1]);
+/**
+ * True when this file is the entry point (`node cli/main.ts`, `node dist/cli/main.js`,
+ * or a bin symlink pointing at either). A filename regex is not enough: the compiled
+ * build is called main.js, and npx runs it through a symlink in node_modules/.bin.
+ */
+const isMain = (() => {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  try {
+    return import.meta.url === pathToFileURL(fs.realpathSync(entry)).href;
+  } catch {
+    return false;
+  }
+})();
 if (isMain) {
   main().catch((e) => die(e instanceof AgentLinkError ? `Error (${e.code}): ${e.message}` : String(e?.stack ?? e)));
 }

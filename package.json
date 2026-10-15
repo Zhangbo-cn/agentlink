@@ -25,6 +25,7 @@
     "agentlink-admin": "bin/agentlink-admin.mjs"
   },
   "files": [
+    "dist",
     "bin",
     "cli",
     "sdk",
@@ -36,6 +37,7 @@
     "README.md",
     "LICENSE",
     "SECURITY.md",
+    "CHANGELOG.md",
     "CONTRIBUTING.md"
   ],
   "pi": {
@@ -47,6 +49,8 @@
     ]
   },
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepare": "npm run build",
     "server": "node --experimental-transform-types --no-warnings server/src/main.ts",
     "cli": "node --experimental-transform-types --no-warnings cli/main.ts",
     "test": "node --experimental-transform-types --no-warnings --test --test-concurrency=1 test/*.test.ts",

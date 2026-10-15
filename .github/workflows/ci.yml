@@ -11,10 +11,21 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: "${{ matrix.node }}" }
+      # npm ci also runs `prepare`, which builds dist/ - so a broken build fails here.
       - run: npm ci
       - run: npm test
       - run: npm run typecheck
       - run: npm run typecheck:extension
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "22" }
+      - run: npm ci
+      # Unit tests run against the sources, so they cannot see that Node refuses to
+      # strip types inside node_modules. This drives the packed tarball instead.
+      - run: bash scripts/pack-smoke.sh
   docker:
     runs-on: ubuntu-latest
     steps:

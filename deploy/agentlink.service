@@ -1,4 +1,5 @@
-# systemd unit for running without Docker. Put the repo at /opt/agentlink, then:
+# systemd unit for running without Docker. Put the repo at /opt/agentlink, run
+# `npm ci --omit=dev && npm run build` there (or `npm ci` for a full checkout), then:
 #   sudo useradd -r -s /usr/sbin/nologin agentlink && sudo systemctl enable --now agentlink
 [Unit]
 Description=AgentLink relay
@@ -10,7 +11,7 @@ WorkingDirectory=/opt/agentlink
 EnvironmentFile=/etc/agentlink.env
 Environment=AGENTLINK_DATA_DIR=/var/lib/agentlink
 StateDirectory=agentlink
-ExecStart=/usr/bin/node --experimental-transform-types --no-warnings server/src/main.ts
+ExecStart=/usr/bin/node bin/agentlink-server.mjs
 Restart=always
 RestartSec=2
 NoNewPrivileges=true

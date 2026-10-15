@@ -1,5 +1,9 @@
 # AgentLink
 
+[![ci](https://github.com/Zhangbo-cn/agentlink/actions/workflows/ci.yml/badge.svg)](https://github.com/Zhangbo-cn/agentlink/actions/workflows/ci.yml)
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![node >= 22.13](https://img.shields.io/badge/node-%E2%89%A5%2022.13-brightgreen.svg)](package.json)
+
 **Free, open-source messaging between AI agents across devices, networks and services.**
 
 AgentLink lets your agents work as a team. That can be pi on your laptop, Claude Code on your workstation, a pi session on a production server, a teammate's Codex, a Python script or a webhook service. Each agent stays where its context, files and permissions already are. Each one can find the others, delegate work to them and get results back.
@@ -24,6 +28,41 @@ AgentLink lets your agents work as a team. That can be pi on your laptop, Claude
  corporate network ────┘   SQLite · one process  └── wss ─── teammate's agent (paired)
    (http fallback)
 ```
+
+## Two minutes end to end
+
+`agentlink-pi` is not on npm yet, so start from a checkout:
+
+```bash
+git clone https://github.com/Zhangbo-cn/agentlink && cd agentlink
+npm install        # also builds dist/, which an installed package runs from
+npm link           # optional: puts agentlink, agentlink-server and agentlink-admin on your PATH
+```
+
+Then, with `npx agentlink-pi` (after the first npm release) or plain `agentlink` (from a checkout):
+
+```bash
+# 1. a relay. http://localhost:8787; without SMTP the sign-in code is printed in this log.
+npx agentlink-pi server
+
+# 2. sign in. The first sign-in creates the account; every later one adds a device to it.
+npx agentlink-pi login http://localhost:8787 --email you@example.com
+#   A 6-digit code was sent to you@example.com.
+#   Code: 404812
+#   Signed in as you@example.com. Device "laptop" saved.
+
+# 3. an agent on another machine (or another terminal). Whatever the command prints is the reply.
+npx agentlink-pi listen --name ci-runner --cap ci,gpu --exec './run-job.sh'
+
+# 4. ask it for something.
+npx agentlink-pi send ci-runner "deploy v1.4.2 to staging" --wait 60
+#   delivered → ci-runner (msg_B-oBIiYVjHPE)
+#   reply ← ci-runner (msg_9aKm3Ql1):
+#   deployed v1.4.2 to staging
+```
+
+Point an AI agent at that relay instead of a shell script and it can do the same thing itself:
+ask it to find a capable agent, delegate the work and report the result.
 
 ## Quick start
 
@@ -265,11 +304,17 @@ See [SECURITY.md](SECURITY.md). In short:
 ```bash
 git clone https://github.com/Zhangbo-cn/agentlink
 cd agentlink
-npm install
-npm test          # 46 tests against a real relay: email sign-in, WS/HTTP/webhook interop, proxy + firewall fallback, MCP bridge, CLI
-npm run typecheck # server, SDK, CLI
-npm run typecheck:extension # the pi extension, against the host packages from devDependencies
+npm install        # runs `prepare`, so dist/ is built
+npm test           # 46 tests against a real relay: email sign-in, WS/HTTP/webhook interop, proxy + firewall fallback, MCP bridge, CLI
+npm run check      # typecheck the server, SDK and CLI, then the pi extension
+bash scripts/pack-smoke.sh   # packs a tarball, installs it and passes a real message through it
 N=200 M=20 node --experimental-transform-types scripts/loadtest.ts
 ```
+
+Sources are TypeScript and run directly with Node's type stripping - no build step while
+developing (`npm run server`, `npm run cli`, `npm test`). The published tarball ships
+compiled JavaScript in `dist/` instead, because Node refuses to strip types for files
+inside `node_modules`. `npm run build` regenerates it, and `scripts/pack-smoke.sh` proves
+the packaged result actually runs.
 
 MIT licensed. See [CONTRIBUTING.md](CONTRIBUTING.md).
