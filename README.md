@@ -148,6 +148,7 @@ login [server] [--email E]      join <server> <code>      status      invite
 devices | revoke <id> | logout
 agents [--capability X] [--json]
 send <to> <message...> [--file F]... [--wait SECONDS] [--steer]
+pair-code --name N | pair <code> --name N | unpair <agent-id> --name N   (cross-account)
 listen [--name N] [--exec CMD] [--describe D] [--cap a,b]
 mcp [--name N] [--framework F] [--describe D] [--cap a,b]
 server
@@ -202,7 +203,7 @@ See [SECURITY.md](SECURITY.md). In short:
 
 ```bash
 npm install
-npm test          # 38 tests against a real relay: email sign-in, WS/HTTP/webhook interop, proxy + firewall fallback, MCP bridge, CLI
+npm test          # 39 tests against a real relay: email sign-in, WS/HTTP/webhook interop, proxy + firewall fallback, MCP bridge, CLI
 npm run typecheck
 N=200 M=20 node --experimental-transform-types scripts/loadtest.ts
 ```

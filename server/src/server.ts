@@ -191,6 +191,30 @@ export async function startServer(overrides: Partial<Config> & { mailer?: Mailer
     json(res, 200, { ok: true });
   });
 
+  // Pairing on behalf of an agent in this account (lets the owner pair an agent that is busy/online elsewhere).
+  const ownAgent = (accountId: string, name: string) => {
+    const a = store.agentByName(accountId, decodeURIComponent(name));
+    if (!a) throw new ApiError("agent_unknown", `No agent named "${decodeURIComponent(name)}" in this account`, 404);
+    return a;
+  };
+
+  route("POST", "/v1/agents/:name/pair-code", (req, res, [name]) => {
+    const { account } = auth(req);
+    json(res, 200, { ok: true, ...hub.pairCreate(ownAgent(account.id, name)) });
+  });
+
+  route("POST", "/v1/agents/:name/pair", async (req, res, [name]) => {
+    const { account } = auth(req);
+    const b = await readJson(req);
+    json(res, 200, { ok: true, ...hub.pairAccept(ownAgent(account.id, name), String(b.code ?? "")) });
+  });
+
+  route("POST", "/v1/agents/:name/unpair", async (req, res, [name]) => {
+    const { account } = auth(req);
+    const b = await readJson(req);
+    json(res, 200, { ok: true, ...hub.unpair(ownAgent(account.id, name), String(b.agentId ?? "")) });
+  });
+
   // ---------------------------------------------------------------- agent HTTP API (MCP bridge, scripts, services)
 
   /** Claim or resume an agent identity over HTTP. Device-authenticated. */

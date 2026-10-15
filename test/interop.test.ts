@@ -431,3 +431,33 @@ test("headless credentials from environment variables", async () => {
   assert.equal(code, 0);
   assert.match(out, /kim@example.com/);
 });
+
+test("CLI cross-account pairing: pair-code while the agent is online elsewhere, pair, then send by id", async () => {
+  const a = await login("pair-a@qq.com", "a-dev"), b = await login("pair-b@163.com", "b-dev");
+  const cfgA = fs.mkdtempSync(path.join(os.tmpdir(), "agentlink-pa-")), cfgB = fs.mkdtempSync(path.join(os.tmpdir(), "agentlink-pb-"));
+  process.env.AGENTLINK_CONFIG_DIR = cfgA; writeCredentials(a);
+  process.env.AGENTLINK_CONFIG_DIR = cfgB; writeCredentials(b); delete process.env.AGENTLINK_CONFIG_DIR;
+  const run = (args: string[], cfg: string) => new Promise<{ code: number; out: string }>((resolve) => {
+    const p = spawnCli(args, cfg); let out = ""; p.stdout.on("data", (d) => { out += d; }); p.stderr.on("data", (d) => { out += d; });
+    p.on("close", (code) => resolve({ code: code ?? 1, out }));
+  });
+  const listener = spawnCli(["listen", "--name", "b-echo", "--exec", "cat"], cfgB);
+  let lerr = ""; listener.stderr.on("data", (d) => { lerr += d; });
+  try {
+    await until(() => lerr.includes("listening as"), 15_000);
+    const pc = await run(["pair-code", "--name", "b-echo"], cfgB);
+    assert.equal(pc.code, 0, pc.out);
+    const code = /([A-Z0-9]{4}-[A-Z0-9]{4})/.exec(pc.out)![1];
+    const pr = await run(["pair", code, "--name", "a-user"], cfgA);
+    assert.equal(pr.code, 0, pr.out);
+    const id = /(ag_[\w-]+)/.exec(pr.out)![1];
+    const s = await run(["send", id, "cross-account hello", "--name", "a-user", "--wait", "20"], cfgA);
+    assert.equal(s.code, 0, s.out);
+    assert.match(s.out, /cross-account hello/);
+    const s2 = await run(["send", id, "again", "--name", "a-user", "--wait", "20"], cfgA); // same named agent reused
+    assert.equal(s2.code, 0, s2.out);
+  } finally {
+    listener.kill();
+    fs.rmSync(cfgA, { recursive: true, force: true }); fs.rmSync(cfgB, { recursive: true, force: true });
+  }
+});

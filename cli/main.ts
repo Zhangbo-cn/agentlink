@@ -14,11 +14,12 @@
  *   agentlink server                                  Run a relay server (same as agentlink-server)
  */
 import os from "node:os";
+import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline/promises";
 import { spawn } from "node:child_process";
 import {
-  AgentLinkClient, AgentLinkError, Rest, enroll, readCredentials, writeCredentials, clearCredentials, serverInfo,
+  AgentLinkClient, AgentLinkError, Rest, enroll, readCredentials, writeCredentials, clearCredentials, serverInfo, configDir,
   startEmailLogin, verifyEmailLogin, type WireMessage, type Transport,
 } from "../sdk/client.ts";
 import { runMcpBridge } from "./mcp.ts";
@@ -76,6 +77,11 @@ Messaging
                                                           Receive messages as JSON lines; with --exec, run CMD
                                                           per message (message JSON on stdin, stdout sent back as reply)
 
+Cross-account
+  pair-code --name N                                      One-time code letting another account talk to agent N
+  pair <code> --name N                                    Accept a code; agent N can then message the other agent by id
+  unpair <agent-id> --name N
+
 Integrations
   mcp [--name N] [--describe D] [--cap C]...              MCP stdio server for Claude Code, Codex, Cursor, Gemini CLI, ...
   server                                                  Run a relay server
@@ -90,12 +96,28 @@ function profileFrom(f: Flags, framework: string) {
 }
 
 function liveClient(f: Flags, defaultName: string | undefined, framework: string) {
-  return new AgentLinkClient({
+  const name = (str(f.name) ?? defaultName)?.toLowerCase();
+  const c = new AgentLinkClient({
     credentials: needCreds(),
-    name: str(f.name) ?? defaultName,
+    name,
+    credential: name ? agentCreds()[name] : undefined,
     profile: profileFrom(f, framework),
     transport: (str(f.transport) as Transport) ?? "auto",
   });
+  if (name) c.onIdentity = (id) => saveAgentCred(id.name, id.credential);
+  return c;
+}
+
+// Credentials of named agents used from this device, so repeated CLI invocations resume the same identity.
+function agentCreds(): Record<string, string> {
+  try { return JSON.parse(fs.readFileSync(path.join(configDir(), "agents.json"), "utf8")); } catch { return {}; }
+}
+function saveAgentCred(name: string, credential: string): void {
+  const all = agentCreds();
+  if (all[name] === credential) return;
+  all[name] = credential;
+  fs.mkdirSync(configDir(), { recursive: true, mode: 0o700 });
+  fs.writeFileSync(path.join(configDir(), "agents.json"), JSON.stringify(all, null, 2), { mode: 0o600 });
 }
 
 export async function main(argv = process.argv.slice(2)): Promise<void> {
@@ -227,6 +249,36 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
       c.start();
       await new Promise<void>((resolve) => { process.on("SIGINT", resolve); process.on("SIGTERM", resolve); });
       c.stop();
+      return;
+    }
+
+    case "pair-code": {
+      // Cross-account: one-time code for agent --name (works even while that agent is online elsewhere).
+      const name = str(f.name);
+      if (!name) die("Usage: agentlink pair-code --name <your-agent-name>");
+      const r = await new Rest(needCreds()).post(`/v1/agents/${encodeURIComponent(name)}/pair-code`);
+      console.log(`Pair code for "${name}": ${r.code}  (expires ${new Date(r.expiresAt).toLocaleTimeString()})\nOn the other account run:\n  agentlink pair ${r.code} --name <their-agent-name>`);
+      return;
+    }
+
+    case "pair": {
+      const name = str(f.name);
+      if (!rest[0] || !name) die("Usage: agentlink pair <code> --name <your-agent-name>");
+      const creds = needCreds();
+      // Make sure the agent exists (register or resume it).
+      const name_ = name.toLowerCase();
+      const id = await new Rest(creds).post("/v1/agent/connect", { name: name_, credential: agentCreds()[name_], profile: profileFrom(f, "cli") }).catch((e) => { if (e.code !== "name_in_use") throw e; return null; });
+      if (id) saveAgentCred(id.name, id.credential);
+      const r = await new Rest(creds).post(`/v1/agents/${encodeURIComponent(name)}/pair`, { code: rest[0] });
+      console.log(`Paired "${name}" with ${r.name} (account ${r.account}).\nAddress it by id: ${r.agentId}`);
+      return;
+    }
+
+    case "unpair": {
+      const name = str(f.name);
+      if (!rest[0] || !name) die("Usage: agentlink unpair <agent-id> --name <your-agent-name>");
+      const r = await new Rest(needCreds()).post(`/v1/agents/${encodeURIComponent(name)}/unpair`, { agentId: rest[0] });
+      console.log(r.removed ? "Pairing removed." : "No such pairing.");
       return;
     }
 
