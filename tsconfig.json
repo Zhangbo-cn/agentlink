@@ -9,15 +9,7 @@
     "skipLibCheck": true,
     "types": [
       "node"
-    ],
-    "paths": {
-      "@earendil-works/pi-coding-agent": [
-        "/home/zhang-pc/.npm-global/lib/node_modules/@earendil-works/pi-coding-agent/dist/index.d.ts"
-      ],
-      "typebox": [
-        "/home/zhang-pc/.npm-global/lib/node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/index.d.mts"
-      ]
-    }
+    ]
   },
   "include": [
     "server/src",
@@ -26,5 +18,8 @@
     "cli",
     "test",
     "examples"
+  ],
+  "exclude": [
+    "extension"
   ]
 }

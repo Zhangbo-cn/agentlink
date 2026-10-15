@@ -265,7 +265,9 @@ See [SECURITY.md](SECURITY.md). In short:
 ```bash
 npm install
 npm test          # 46 tests against a real relay: email sign-in, WS/HTTP/webhook interop, proxy + firewall fallback, MCP bridge, CLI
-npm run typecheck
+npm run typecheck # server, SDK, CLI
+npm install --no-save @earendil-works/pi-coding-agent typebox   # only to type-check the pi extension
+npm run typecheck:extension
 N=200 M=20 node --experimental-transform-types scripts/loadtest.ts
 ```
 

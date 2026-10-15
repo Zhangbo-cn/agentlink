@@ -50,7 +50,9 @@
     "server": "node --experimental-transform-types --no-warnings server/src/main.ts",
     "cli": "node --experimental-transform-types --no-warnings cli/main.ts",
     "test": "node --experimental-transform-types --no-warnings --test --test-concurrency=1 test/*.test.ts",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "typecheck:extension": "tsc --noEmit -p tsconfig.extension.json",
+    "check": "npm run typecheck && npm run typecheck:extension"
   },
   "dependencies": {
     "https-proxy-agent": "^7.0.6",
@@ -79,5 +81,13 @@
     "mailparser": "^3.9.39",
     "smtp-server": "^3.19.22",
     "typescript": "^5.7.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "PLACEHOLDER"
+  },
+  "homepage": "PLACEHOLDER",
+  "bugs": {
+    "url": "PLACEHOLDER"
   }
 }
