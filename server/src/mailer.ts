@@ -89,6 +89,7 @@ export function createMailer(cfg: Config, log: Logger): Mailer {
 /** Map raw SMTP errors to actionable hints (logged for the operator, never shown to end users). */
 export function explainSmtpError(err: unknown): string {
   const m = String((err as Error)?.message ?? err);
+  if (/User has no permission/i.test(m)) return `${m} — 该邮箱尚未开启 SMTP 服务：网易邮箱请到 设置 → POP3/SMTP/IMAP 开启"IMAP/SMTP服务"，并用开启时生成的授权码作为 AGENTLINK_SMTP_PASS`;
   if (/must be same as authorization user|sender address rejected|not owned by user|553|501/i.test(m)) return `${m} — 发件人(AGENTLINK_MAIL_FROM)必须与 SMTP 登录账号一致；留空即可自动使用登录账号`;
   if (/535|auth|invalid login|username and password not accepted|BadCredentials/i.test(m)) return `${m} — 认证失败：QQ/163/126 需使用"授权码"，Gmail 需使用 App Password，而不是登录密码`;
   if (/ETIMEDOUT|ECONNREFUSED|ENOTFOUND|EHOSTUNREACH|ECONNRESET|Greeting never received|timeout/i.test(m)) return `${m} — 无法连接 SMTP 服务器：检查网络/防火墙（很多云厂商封禁出站 25 端口，请用 465/587）；国内服务器连 Gmail 通常不可达`;
